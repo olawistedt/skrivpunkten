@@ -788,7 +788,7 @@ const ManualSignaling = {
     let data;
     try { data = JSON.parse(atob(encoded.replace(/\s+/g, ''))); } catch { throw new Error('Ogiltig inbjudningskod'); }
     if (data.t !== 'o') throw new Error('Det här är ett svar, inte en inbjudan');
-    if (data.pk === Identity.current?.pubkey) throw new Error('Det är din egen nyckel!');
+    if (data.pk === Identity.current?.pubkey && data.did === Identity.current?.deviceId) throw new Error('Det är din egen nyckel!');
 
     const peerPubkey = data.pk;
     const name = data.n;
