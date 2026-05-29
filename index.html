@@ -115,24 +115,44 @@
       50% { opacity: 0.4; }
     }
 
-    /* ── Ljust tema ── */
+    /* ── Ljust tema — Skrivkammare: pergament & teal-bläck ── */
     body.light-mode {
-      --bg-deep:      #fafaf8;
-      --bg-mid:       #f2f2ee;
-      --bg-surface:   #ffffff;
-      --bg-raised:    #f7f7f4;
-      --border:       #e0e0d8;
-      --border-glow:  #c0c0b0;
-      --text-primary: #1a1a14;
-      --text-muted:   #706858;
-      --text-faint:   #c0b8a8;
-      --accent:       #2a7acc;
-      --accent-dim:   #3a6aaa;
-      --accent-glow:  rgba(42,122,204,0.12);
-      --warn:         #cc3a28;
-      --info:         #1a6acc;
+      --bg-deep:      #f7f2ec;
+      --bg-mid:       #ede6da;
+      --bg-surface:   #fdfbf8;
+      --bg-raised:    #f3ede3;
+      --border:       #ddd0bc;
+      --border-glow:  #c4b49a;
+      --text-primary: #1e1814;
+      --text-muted:   #7a6854;
+      --text-faint:   #c0a888;
+      --accent:       #0d7a6e;
+      --accent-dim:   #0a5e54;
+      --accent-glow:  rgba(13,122,110,0.14);
+      --warn:         #c44428;
+      --info:         #2a68b0;
     }
     body.light-mode::before { display: none; }
+
+    body.light-mode .logo {
+      text-shadow: 0 0 20px rgba(13,122,110,0.25);
+    }
+    body.light-mode .btn-primary:hover {
+      background: #14b8a8;
+      box-shadow: 0 0 20px rgba(13,122,110,0.3);
+    }
+    body.light-mode .card.highlight {
+      background: linear-gradient(135deg, var(--bg-surface), rgba(13,122,110,0.05));
+    }
+    body.light-mode .hero-icon {
+      filter: drop-shadow(0 0 20px rgba(13,122,110,0.25));
+    }
+    body.light-mode .peer-status.online {
+      background: rgba(13,122,110,0.1);
+    }
+    body.light-mode #install-banner {
+      background: linear-gradient(135deg, rgba(13,122,110,0.08), rgba(13,122,110,0.03));
+    }
 
     /* ── Tema-toggle ── */
     .theme-switch-wrapper { display: flex; align-items: center; gap: 8px; margin-left: 12px; }
@@ -550,7 +570,7 @@
       margin: 0 -16px 24px;
     }
     body.light-mode #bottom-nav {
-      background: rgba(250,250,248,0.92);
+      background: rgba(247,242,236,0.94);
     }
     .nav-items {
       display: flex;
