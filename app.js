@@ -1945,11 +1945,12 @@ async function init() {
   });
 
   // Onboarding — importera identitet från textkod
-  document.getElementById('btn-onboard-show-import')?.addEventListener('click', () => {
-    const section = document.getElementById('onboard-import-section');
+  document.getElementById('btn-onboard-show-create')?.addEventListener('click', () => {
+    const section = document.getElementById('onboard-create-section');
     const visible = section.style.display !== 'none';
     section.style.display = visible ? 'none' : 'block';
-    if (!visible) document.getElementById('onboard-import-code')?.focus();
+    document.getElementById('btn-onboard-show-create').textContent = visible ? '+ Skapa en ny identitet' : '− Skapa en ny identitet';
+    if (!visible) document.getElementById('onboard-name')?.focus();
   });
 
   document.getElementById('btn-onboard-do-import')?.addEventListener('click', () => {
@@ -2234,4 +2235,24 @@ async function init() {
 }
 
 // Start
+// Tema-toggle (samma mönster som ../blogg)
+document.addEventListener('DOMContentLoaded', () => {
+  const checkbox = document.getElementById('theme-checkbox');
+  if (!checkbox) return;
+  const saved = localStorage.getItem('theme');
+  if (saved === 'light-mode') {
+    document.body.classList.add('light-mode');
+    checkbox.checked = true;
+  }
+  checkbox.addEventListener('change', function () {
+    if (this.checked) {
+      document.body.classList.add('light-mode');
+      localStorage.setItem('theme', 'light-mode');
+    } else {
+      document.body.classList.remove('light-mode');
+      localStorage.setItem('theme', 'dark-mode');
+    }
+  });
+});
+
 document.addEventListener('DOMContentLoaded', init);

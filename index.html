@@ -79,7 +79,6 @@
       align-items: center;
       justify-content: space-between;
       padding: 20px 0 16px;
-      border-bottom: 1px solid var(--border);
       margin-bottom: 24px;
     }
 
@@ -115,6 +114,37 @@
       0%,100% { opacity: 1; }
       50% { opacity: 0.4; }
     }
+
+    /* ── Ljust tema ── */
+    body.light-mode {
+      --bg-deep:      #f0f0f5;
+      --bg-mid:       #e8e8f2;
+      --bg-surface:   #ffffff;
+      --bg-raised:    #f5f5fa;
+      --border:       #d0d0e0;
+      --border-glow:  #a0a0c0;
+      --text-primary: #1a1a2e;
+      --text-muted:   #5858a0;
+      --text-faint:   #b0b0cc;
+      --accent:       #2a8a38;
+      --accent-dim:   #3a7a42;
+      --accent-glow:  rgba(42,138,56,0.12);
+      --warn:         #cc3a28;
+      --info:         #1a6acc;
+    }
+    body.light-mode body::before { display: none; }
+
+    /* ── Tema-toggle ── */
+    .theme-switch-wrapper { display: flex; align-items: center; gap: 8px; margin-left: 12px; }
+    .theme-label { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+    .theme-switch { display: inline-block; height: 18px; position: relative; width: 34px; flex-shrink: 0; }
+    .theme-switch input { display: none; }
+    .slider { background: var(--border-glow); bottom: 0; cursor: pointer; left: 0; position: absolute; right: 0; top: 0; transition: .3s; }
+    .slider:before { background: #fff; bottom: 3px; content: ''; height: 12px; left: 3px; position: absolute; transition: .3s; width: 12px; }
+    input:checked + .slider { background: var(--accent); }
+    input:checked + .slider:before { transform: translateX(16px); }
+    .slider.round { border-radius: 18px; }
+    .slider.round:before { border-radius: 50%; }
 
     /* ── Screens ── */
     .screen { display: none; }
@@ -651,64 +681,49 @@
   <header>
     <div class="logo">
       🖋️ Skrivpunkten 1.0-Beta-1
-      <span>p2p · krypterat · ditt</span>
     </div>
     <div class="header-status">
       <div class="status-dot" id="connection-dot"></div>
       <span id="connection-label">Offline</span>
+      <div class="theme-switch-wrapper">
+        <span class="theme-label">🌙</span>
+        <label class="theme-switch" for="theme-checkbox">
+          <input type="checkbox" id="theme-checkbox" />
+          <div class="slider round"></div>
+        </label>
+        <span class="theme-label">☀️</span>
+      </div>
     </div>
   </header>
 
   <!-- ═══ ONBOARDING ═══ -->
   <div id="screen-onboard" class="screen active">
     <div class="hero">
+      <h1><em>Skrivpunkten</em></h1>
       <span class="hero-icon">🖋️</span>
-      <h1>Det <em>sociala</em><br>nätverket<br>du äger</h1>
-      <p>Inget bolag. Inga servrar. Din identitet bygger på kryptografi. Din data lever på din privata enhet. Du äger ditt data.</p>
-    </div>
-
-    <div class="feature-grid">
-      <div class="feature-item">
-        <strong>🔐 Kryptografisk ID</strong>
-        Asymmetrisk nyckel. Ingen kan utge sig för att vara du.
-      </div>
-      <div class="feature-item">
-        <strong>📡 Peer-to-Peer</strong>
-        WebRTC — enheter pratar direkt med varandra.
-      </div>
-      <div class="feature-item">
-        <strong>📵 Offline-First</strong>
-        Fungerar utan internet. Synkas när du möter andra.
-      </div>
-      <div class="feature-item">
-        <strong>🤝 Social Recovery</strong>
-        Tappa telefonen? Betrodda vänner återställer din identitet.
-      </div>
     </div>
 
     <div class="onboard-form card">
-      <div class="section-title">Skapa din identitet</div>
-      <div class="form-group">
-        <label class="form-label">Visningsnamn</label>
-        <input type="text" id="onboard-name" placeholder="T.ex. Erik Eriksson" maxlength="40" />
+      <div id="onboard-import-section">
+        <label class="form-label">Din identitetskod</label>
+        <textarea id="onboard-import-code" placeholder="Klistra in kod här…" style="width:100%;height:80px;font-family:monospace;font-size:10px;resize:none;word-break:break-all;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:8px;box-sizing:border-box;color:var(--text);"></textarea>
+        <button class="btn btn-primary w-full mt-8" id="btn-onboard-do-import">Importera identitet</button>
       </div>
-      <div class="form-group">
-        <label class="form-label">Biografi (valfri)</label>
-        <input type="text" id="onboard-bio" placeholder="Kort beskrivning av dig" maxlength="100" />
-      </div>
-      <div id="key-gen-status" class="text-muted mt-8" style="font-size:11px;min-height:18px;"></div>
-      <button class="btn btn-primary w-full mt-12" id="btn-create-identity">
-        🔑 Generera nycklar & gå med
-      </button>
-      <p class="text-muted text-center mt-8" style="font-size:10px;">
-        Dina nycklar genereras lokalt och lämnar aldrig din enhet.
-      </p>
       <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:16px;">
-        <button class="btn btn-ghost btn-sm w-full" id="btn-onboard-show-import">📥 Har du redan ett konto? Importera hit</button>
-        <div id="onboard-import-section" style="display:none;margin-top:12px;">
-          <label class="form-label">Klistra in identitetskod från din andra enhet</label>
-          <textarea id="onboard-import-code" placeholder="Klistra in kod här…" style="width:100%;height:80px;font-family:monospace;font-size:10px;resize:none;word-break:break-all;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:8px;box-sizing:border-box;color:var(--text);"></textarea>
-          <button class="btn btn-primary w-full mt-8" id="btn-onboard-do-import">Importera identitet</button>
+        <button class="btn btn-ghost btn-sm w-full" id="btn-onboard-show-create">+ Skapa en ny identitet</button>
+        <div id="onboard-create-section" style="display:none;margin-top:12px;">
+          <div class="form-group">
+            <label class="form-label">Visningsnamn</label>
+            <input type="text" id="onboard-name" maxlength="40" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Biografi (valfri)</label>
+            <input type="text" id="onboard-bio" placeholder="Kort beskrivning av dig" maxlength="100" />
+          </div>
+          <div id="key-gen-status" class="text-muted mt-8" style="font-size:11px;min-height:18px;"></div>
+          <button class="btn btn-primary w-full mt-12" id="btn-create-identity">
+            Skapa din identitet
+          </button>
         </div>
       </div>
     </div>
