@@ -70,7 +70,7 @@
       z-index: 1;
       max-width: 680px;
       margin: 0 auto;
-      padding: 0 16px 120px;
+      padding: 0 16px 40px;
     }
 
     /* ── Header ── */
@@ -117,22 +117,22 @@
 
     /* ── Ljust tema ── */
     body.light-mode {
-      --bg-deep:      #f0f0f5;
-      --bg-mid:       #e8e8f2;
+      --bg-deep:      #fafaf8;
+      --bg-mid:       #f2f2ee;
       --bg-surface:   #ffffff;
-      --bg-raised:    #f5f5fa;
-      --border:       #d0d0e0;
-      --border-glow:  #a0a0c0;
-      --text-primary: #1a1a2e;
-      --text-muted:   #5858a0;
-      --text-faint:   #b0b0cc;
-      --accent:       #2a8a38;
-      --accent-dim:   #3a7a42;
-      --accent-glow:  rgba(42,138,56,0.12);
+      --bg-raised:    #f7f7f4;
+      --border:       #e0e0d8;
+      --border-glow:  #c0c0b0;
+      --text-primary: #1a1a14;
+      --text-muted:   #706858;
+      --text-faint:   #c0b8a8;
+      --accent:       #2a7acc;
+      --accent-dim:   #3a6aaa;
+      --accent-glow:  rgba(42,122,204,0.12);
       --warn:         #cc3a28;
       --info:         #1a6acc;
     }
-    body.light-mode body::before { display: none; }
+    body.light-mode::before { display: none; }
 
     /* ── Tema-toggle ── */
     .theme-switch-wrapper { display: flex; align-items: center; gap: 8px; margin-left: 12px; }
@@ -540,19 +540,24 @@
        BOTTOM NAV
     ═══════════════════════════════════ */
     #bottom-nav {
-      position: fixed;
-      bottom: 0; left: 0; right: 0;
+      position: sticky;
+      top: 0;
       background: rgba(6,6,9,0.92);
       backdrop-filter: blur(20px);
-      border-top: 1px solid var(--border);
-      padding: 8px 0 env(safe-area-inset-bottom, 8px);
+      border-bottom: 1px solid var(--border);
+      padding: 4px 0;
       z-index: 100;
+      margin: 0 -16px 24px;
+    }
+    body.light-mode #bottom-nav {
+      background: rgba(250,250,248,0.92);
     }
     .nav-items {
       display: flex;
       justify-content: space-around;
-      max-width: 400px;
+      max-width: 680px;
       margin: 0 auto;
+      padding: 0 16px;
     }
     .nav-btn {
       display: flex;
@@ -685,16 +690,41 @@
     <div class="header-status">
       <div class="status-dot" id="connection-dot"></div>
       <span id="connection-label">Offline</span>
-      <div class="theme-switch-wrapper">
+    </div>
+  </header>
+
+  <!-- Toppnavigation (dold tills inloggad) -->
+  <nav id="bottom-nav" style="display:none;">
+    <div class="nav-items">
+      <button class="nav-btn active" data-screen="feed">
+        <span class="nav-icon-wrap"><span class="icon">🏠</span></span>
+        Flöde
+      </button>
+      <button class="nav-btn" data-screen="peers">
+        <span class="nav-icon-wrap">
+          <span class="icon">📡</span>
+          <span class="badge" id="peer-badge" style="display:none">0</span>
+        </span>
+        Peers
+      </button>
+      <button class="nav-btn" data-screen="identity">
+        <span class="nav-icon-wrap"><span class="icon">⚙️</span></span>
+        Inställningar
+      </button>
+      <div class="nav-btn theme-switch-wrapper" style="cursor:default;flex-direction:row;gap:6px;">
         <span class="theme-label">🌙</span>
-        <label class="theme-switch" for="theme-checkbox">
+        <label class="theme-switch" for="theme-checkbox" style="cursor:pointer;">
           <input type="checkbox" id="theme-checkbox" />
           <div class="slider round"></div>
         </label>
         <span class="theme-label">☀️</span>
       </div>
+      <button class="nav-btn" id="btn-nav-logout">
+        <span class="nav-icon-wrap"><span class="icon">🚪</span></span>
+        Logga ut
+      </button>
     </div>
-  </header>
+  </nav>
 
   <!-- ═══ ONBOARDING ═══ -->
   <div id="screen-onboard" class="screen active">
@@ -707,10 +737,10 @@
       <div id="onboard-import-section">
         <label class="form-label">Din identitetskod</label>
         <textarea id="onboard-import-code" placeholder="Klistra in kod här…" style="width:100%;height:80px;font-family:monospace;font-size:10px;resize:none;word-break:break-all;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:8px;box-sizing:border-box;color:var(--text);"></textarea>
-        <button class="btn btn-primary w-full mt-8" id="btn-onboard-do-import">Importera identitet</button>
+        <button class="btn btn-primary w-full mt-8" id="btn-onboard-do-import">Använd identitet</button>
       </div>
       <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:16px;">
-        <button class="btn btn-ghost btn-sm w-full" id="btn-onboard-show-create">+ Skapa en ny identitet</button>
+        <button class="btn btn-primary w-full" id="btn-onboard-show-create">+ Skapa en ny identitet</button>
         <div id="onboard-create-section" style="display:none;margin-top:12px;">
           <div class="form-group">
             <label class="form-label">Visningsnamn</label>
@@ -731,12 +761,6 @@
 
   <!-- ═══ FEED ═══ -->
   <div id="screen-feed" class="screen">
-    <div id="install-banner">
-      <span>📲 Installera Skivpunkten som app</span>
-      <button class="btn btn-primary btn-sm" id="btn-install">Installera</button>
-      <button class="btn btn-ghost btn-sm" id="btn-install-dismiss">✕</button>
-    </div>
-
     <div class="compose-box">
       <div class="compose-meta">
         <div class="avatar" id="compose-avatar">?</div>
@@ -792,16 +816,6 @@
       </div>
     </div>
 
-    <!-- Identitet -->
-    <div class="card mt-12">
-      <div class="section-title">Din publik nyckel</div>
-      <p class="text-muted" style="font-size:11px;margin-bottom:8px;">
-        Enbart för identifikation — <strong>inte</strong> en anslutningskod.
-        För att ansluta: använd “Skapa inbjudningskod” ovan.
-      </p>
-      <div class="identity-pubkey" id="identity-info-text" style="font-size:9px;"></div>
-    </div>
-
     <div class="section-title mt-16">Mina peers</div>
     <div id="peers-list">
       <div class="card text-muted text-center" style="font-size:12px;">
@@ -818,6 +832,12 @@
 
   <!-- ═══ IDENTITET ═══ -->
   <div id="screen-identity" class="screen">
+    <div id="install-banner">
+      <span>📲 Installera Skrivpunkten som app</span>
+      <button class="btn btn-primary btn-sm" id="btn-install">Installera</button>
+      <button class="btn btn-ghost btn-sm" id="btn-install-dismiss">✕</button>
+    </div>
+
     <div class="card highlight">
       <div class="section-title">Din identitet</div>
       <div class="flex gap-12 items-center">
@@ -844,6 +864,12 @@
         <textarea id="identity-import-code" placeholder="Klistra in kod här…" style="width:100%;height:80px;font-family:monospace;font-size:10px;resize:none;word-break:break-all;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:8px;box-sizing:border-box;color:var(--text);"></textarea>
         <button class="btn btn-primary btn-sm w-full mt-8" id="btn-do-import-code">Importera</button>
       </div>
+    <div class="card mt-12">
+      <div class="section-title">Din publik nyckel</div>
+      <p class="text-muted" style="font-size:11px;margin-bottom:8px;">
+        Enbart för identifikation — <strong>inte</strong> en anslutningskod.
+      </p>
+      <div class="identity-pubkey" id="identity-info-text" style="font-size:9px;"></div>
     </div>
 
     <div class="card mt-12">
@@ -897,36 +923,6 @@
   </div>
 </div>
 
-<!-- Bottom nav (hidden initially) -->
-<nav id="bottom-nav" style="display:none;">
-  <div class="nav-items">
-    <button class="nav-btn active" data-screen="feed">
-      <span class="nav-icon-wrap">
-        <span class="icon">🏠</span>
-      </span>
-      Flöde
-    </button>
-    <button class="nav-btn" data-screen="peers">
-      <span class="nav-icon-wrap">
-        <span class="icon">📡</span>
-        <span class="badge" id="peer-badge" style="display:none">0</span>
-      </span>
-      Peers
-    </button>
-    <button class="nav-btn" data-screen="identity">
-      <span class="nav-icon-wrap">
-        <span class="icon">🔐</span>
-      </span>
-      Identitet
-    </button>
-    <button class="nav-btn" id="btn-nav-logout">
-      <span class="nav-icon-wrap">
-        <span class="icon">🚪</span>
-      </span>
-      Logga ut
-    </button>
-  </div>
-</nav>
 
 <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
 <script src="app.js"></script>

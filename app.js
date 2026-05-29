@@ -1516,10 +1516,11 @@ const UI = {
   renderQR() {
     const canvas = document.getElementById('qr-canvas');
     const identityText = document.getElementById('identity-info-text');
-    if (!canvas || !Identity.current) return;
+    if (!Identity.current) return;
+    if (identityText) identityText.textContent = Identity.current.pubkey;
+    if (!canvas) return;
     const info = `${Identity.current.name} · ${Identity.shortKey(Identity.current.pubkey)}`;
     QR.drawInviteCode(canvas, info);
-    if (identityText) identityText.textContent = Identity.current.pubkey;
   },
 
   renderIdentity() {
