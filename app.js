@@ -214,6 +214,7 @@ const Identity = {
       bio,
       pubkey,
       privkeyJwk,
+      deviceId: Crypto.uuid(),
       createdAt: Date.now()
     };
     await DB.put('identity', id);
@@ -226,6 +227,10 @@ const Identity = {
   async load() {
     const id = await DB.get('identity', 'self');
     if (!id) return null;
+    if (!id.deviceId) {
+      id.deviceId = Crypto.uuid();
+      await DB.put('identity', id);
+    }
     Identity.current = id;
     Identity.privateKey = await Crypto.importPrivateKey(id.privkeyJwk);
     return id;
@@ -424,7 +429,7 @@ const CommentLikes = {
 // 5. PEER-HANTERING
 // ══════════════════════════════════════════════════════════
 const Peers = {
-  connections: new Map(), // pubkey → { channel, lastSeen, name }
+  connections: new Map(), // pubkey:deviceId → { channel, lastSeen, name }
 
   async getAll() {
     return DB.getAll('peers');
@@ -449,11 +454,34 @@ const Peers = {
   },
 
   onlineCount() {
-    let count = 0;
-    for (const [, conn] of Peers.connections) {
-      if (conn.channel?.readyState === 'open') count++;
+    const seen = new Set();
+    for (const [key, conn] of Peers.connections) {
+      if (conn.channel?.readyState === 'open') {
+        const pk = key.includes(':') ? key.split(':')[0] : key;
+        seen.add(pk);
+      }
     }
-    return count;
+    return seen.size;
+  },
+
+  /** Bygger anslutningsnyckel: pubkey:deviceId (eller bara pubkey om deviceId saknas) */
+  connKey(pubkey, deviceId) {
+    return deviceId ? `${pubkey}:${deviceId}` : pubkey;
+  },
+
+  /** Returnerar alla anslutningsposter för en given pubkey (alla enheter) */
+  channelsFor(pubkey) {
+    const result = [];
+    for (const [key, conn] of Peers.connections) {
+      if (key === pubkey || key.startsWith(pubkey + ':')) result.push(conn);
+    }
+    return result;
+  },
+
+  /** Returnerar första öppna kanalen för en pubkey (bakåtkompatibel hjälpare) */
+  connFor(pubkey) {
+    const channels = Peers.channelsFor(pubkey);
+    return channels.find(c => c.channel?.readyState === 'open') || channels[0] || null;
   }
 };
 
@@ -531,7 +559,7 @@ const ManualSignaling = {
         if (e.key === ManualSignaling._lsKey('req', peerSlice, curSlice)) {
           try {
             localStorage.removeItem(e.key);
-            const conn = Peers.connections.get(peer.pubkey);
+            const conn = Peers.connFor(peer.pubkey);
             if (conn?.channel?.readyState === 'open') return;
             const { code } = await ManualSignaling.createOffer();
             localStorage.setItem(
@@ -549,7 +577,7 @@ const ManualSignaling = {
     // Hantera varje känd peer
     for (const peer of savedPeers) {
       const peerSlice = peer.pubkey.slice(0, 16);
-      const conn = Peers.connections.get(peer.pubkey);
+      const conn = Peers.connFor(peer.pubkey);
       if (conn?.channel?.readyState === 'open') continue; // redan ansluten
 
       // Bokstavsordning avgör vem som initerar (stabilt, undviker dubbla offer)
@@ -610,12 +638,13 @@ const ManualSignaling = {
     const setupChannel = (ch) => {
       const onOpen = () => {
         const pubkey = peerRef.pubkey;
+        const finalKey = Peers.connKey(pubkey, peerRef.deviceId);
         const entry = Peers.connections.get(connKey) || {};
         entry.channel = ch;
         entry.name = peerRef.name;
         entry.lastSeen = Date.now();
-        Peers.connections.set(pubkey, entry);
-        if (connKey !== pubkey) Peers.connections.delete(connKey);
+        Peers.connections.set(finalKey, entry);
+        if (connKey !== finalKey) Peers.connections.delete(connKey);
 
         // Spara kontaktuppgifter i localStorage vid lyckad anslutning
         try {
@@ -642,14 +671,15 @@ const ManualSignaling = {
 
       ch.onclose = () => {
         const pubkey = peerRef.pubkey;
-        const entry = Peers.connections.get(pubkey);
+        const finalKey = Peers.connKey(pubkey, peerRef.deviceId);
+        const entry = Peers.connections.get(finalKey);
         if (entry) entry.channel = null;
         UI.renderPeers();
         UI.updateConnectionStatus(Peers.onlineCount() > 0);
         // Initiator skapar nytt offer när kanalen stängs
         if (isInitiator && pubkey) {
           setTimeout(async () => {
-            const cur = Peers.connections.get(pubkey);
+            const cur = Peers.connFor(pubkey);
             if (cur?.channel?.readyState === 'open') return;
             try {
               const { code } = await ManualSignaling.createOffer();
@@ -687,7 +717,8 @@ const ManualSignaling = {
     // Rensa kanal vid frånkoppling — reagera på 'disconnected' direkt (snabbt, ~5 s)
     // så att _sendBeacons slutar hoppa över peern och återanslutning kan starta.
     const _clearChannel = () => {
-      const entry = Peers.connections.get(peerRef.pubkey);
+      const finalKey = Peers.connKey(peerRef.pubkey, peerRef.deviceId);
+      const entry = Peers.connections.get(finalKey);
       if (entry?.channel) { entry.channel = null; UI.renderPeers(); }
     };
     pc.onconnectionstatechange = () => {
@@ -721,7 +752,7 @@ const ManualSignaling = {
    */
   async createOffer() {
     const tempId = 'p_' + Date.now();
-    const peerRef = { pubkey: null, name: null };
+    const peerRef = { pubkey: null, name: null, deviceId: null };
     Peers.connections.set(tempId, { name: '…', _pendingOffer: true });
 
     const pc = ManualSignaling._makePC(true, tempId, peerRef);
@@ -737,7 +768,8 @@ const ManualSignaling = {
         sdp: pc.localDescription.sdp,
         pk: Identity.current.pubkey,
         n: Identity.current.name,
-        id: tempId
+        id: tempId,
+        did: Identity.current.deviceId
       })),
       tempId
     };
@@ -755,10 +787,11 @@ const ManualSignaling = {
 
     const peerPubkey = data.pk;
     const name = data.n;
-    const peerRef = { pubkey: peerPubkey, name };
-    Peers.connections.set(peerPubkey, { name, _pendingOffer: true });
+    const peerRef = { pubkey: peerPubkey, name, deviceId: data.did || null };
+    const peerConnKey = Peers.connKey(peerPubkey, data.did);
+    Peers.connections.set(peerConnKey, { name, _pendingOffer: true });
 
-    const pc = ManualSignaling._makePC(false, peerPubkey, peerRef);
+    const pc = ManualSignaling._makePC(false, peerConnKey, peerRef);
     await pc.setRemoteDescription({ type: 'offer', sdp: data.sdp });
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
@@ -774,7 +807,8 @@ const ManualSignaling = {
       sdp: pc.localDescription.sdp,
       pk: Identity.current.pubkey,
       n: Identity.current.name,
-      id: data.id
+      id: data.id,
+      did: Identity.current.deviceId
     }));
   },
 
@@ -792,15 +826,17 @@ const ManualSignaling = {
 
     pending.peerRef.pubkey = data.pk;
     pending.peerRef.name = data.n;
+    pending.peerRef.deviceId = data.did || null;
 
-    // Flytta connection-entry till rätt nyckel (tempId → pubkey)
+    // Flytta connection-entry till rätt nyckel (tempId → pubkey:deviceId)
+    const finalKey = Peers.connKey(data.pk, data.did);
     const byId = Peers.connections.get(data.id);
-    if (byId) { Peers.connections.delete(data.id); Peers.connections.set(data.pk, byId); }
+    if (byId) { Peers.connections.delete(data.id); Peers.connections.set(finalKey, byId); }
     // Hantera fallet att onopen hann köra innan acceptAnswer (sparades under null-nyckeln)
     const byNull = Peers.connections.get(null);
     if (byNull) {
       Peers.connections.delete(null);
-      Peers.connections.set(data.pk, byNull);
+      Peers.connections.set(finalKey, byNull);
       byNull.name = data.n;
       if (byNull.channel?.readyState === 'open') {
         setTimeout(() => Gossip.syncWithPeer(data.pk), 100);
@@ -865,7 +901,7 @@ const Gossip = {
         const likes = await Likes.getAll();
         const comments = await Comments.getAll();
         const commentLikes = await CommentLikes.getAll();
-        const conn = Peers.connections.get(fromPubkey);
+        const conn = Peers.connFor(fromPubkey);
         if (conn?.channel?.readyState === 'open') {
           conn.channel.send(JSON.stringify({
             type: 'sync_response',
@@ -960,7 +996,7 @@ const Gossip = {
   },
 
   async syncWithPeer(pubkey) {
-    const conn = Peers.connections.get(pubkey);
+    const conn = Peers.connFor(pubkey);
     if (!conn?.channel || conn.channel.readyState !== 'open') return;
     conn.channel.send(JSON.stringify({
       type: 'sync_request',
@@ -971,7 +1007,8 @@ const Gossip = {
   forwardToOthers(msg, exceptPubkey) {
     if (msg.post && msg.post.hops >= 6) return; // max 6 hopp
     if (msg.comment && msg.comment.hops >= 6) return;
-    for (const [pubkey, conn] of Peers.connections) {
+    for (const [key, conn] of Peers.connections) {
+      const pubkey = key.includes(':') ? key.split(':')[0] : key;
       if (pubkey === exceptPubkey) continue;
       if (conn.channel?.readyState === 'open') {
         try {
@@ -1419,7 +1456,7 @@ const UI = {
         return;
       }
       list.innerHTML = peers.map(p => {
-        const conn = Peers.connections.get(p.pubkey);
+        const conn = Peers.connFor(p.pubkey);
         const isOnline = conn?.channel?.readyState === 'open';
         const statusClass = isOnline ? 'online' : '';
         const statusText = isOnline ? 'online' : 'frånkopplad';
@@ -1577,7 +1614,7 @@ const MqttSignaling = {
   client: null,
   BROKER: 'wss://broker.emqx.io:8084/mqtt',
   _beaconTimer: null,
-  _lastOfferTo: new Map(), // peerPk → timestamp (undvik offer-spam)
+  _lastOfferTo: new Map(), // 'peerPk:peerDid' → timestamp (undvik offer-spam)
 
   connect() {
     if (!Identity.current) return;
@@ -1599,15 +1636,16 @@ const MqttSignaling = {
     });
     MqttSignaling.client = client;
 
+    const myDid = Identity.current.deviceId;
+
     client.on('connect', () => {
       console.log('[MQTT] Ansluten till broker');
-      client.subscribe(`mycel/inbox/${myPk}`, (err) => {
+      // Prenumerera på broadcast-ämne (beacons) och enhetsspecifikt ämne (offer/answer)
+      client.subscribe([`mycel/inbox/${myPk}`, `mycel/inbox/${myPk}/${myDid}`], (err) => {
         if (err) { console.warn('[MQTT] Prenumerationsfel:', err.message); return; }
         console.log('[MQTT] Lyssnar på mycel/inbox/' + myPk.slice(0, 12) + '…');
-        // Skicka beacon direkt vid anslutning
         MqttSignaling._sendBeacons();
       });
-      // Periodisk beacon var 3:e sekund
       clearInterval(MqttSignaling._beaconTimer);
       MqttSignaling._beaconTimer = setInterval(() => MqttSignaling._sendBeacons(), 3000);
     });
@@ -1616,24 +1654,31 @@ const MqttSignaling = {
       const raw = payload.toString();
       if (!raw) return;
       let msg; try { msg = JSON.parse(raw); } catch { return; }
-      if (!msg?.from || msg.from === myPk) return;
+      if (!msg?.from) return;
+      // Ignorera eget eko (samma enhet)
+      if (msg.from === myPk && msg.did === myDid) return;
 
       console.log('[MQTT] ← %s från %s', msg.type, msg.from.slice(0, 12));
 
       if (msg.type === 'beacon') {
-        // Peer är online — om jag är initiator: skicka offer.
-        // Ingen readyState-check här; _sendOfferTo har egen throttle + öppen-check.
-        if (myPk < msg.from) {
-          await MqttSignaling._sendOfferTo(msg.from);
+        // Kontrollera om det är en annan enhet med samma identitet
+        const isSameIdentity = msg.from === myPk;
+        const myComposite = myPk + ':' + myDid;
+        const peerComposite = msg.from + ':' + (msg.did || '');
+        if (myComposite < peerComposite) {
+          await MqttSignaling._sendOfferTo(msg.from, msg.did, isSameIdentity);
         }
 
       } else if (msg.type === 'offer') {
         // Jag är responder — acceptera alltid offer (peer kan ha startat om).
-        // Ingen readyState-check: gammal kanal kan vara 'open' pga försenad ICE-detektering.
         try {
           const answerCode = await ManualSignaling.acceptOffer(msg.code);
-          client.publish(`mycel/inbox/${msg.from}`, JSON.stringify({
-            type: 'answer', from: myPk, code: answerCode
+          // Svara riktat till avsändarens specifika enhet
+          const answerTarget = msg.did
+            ? `mycel/inbox/${msg.from}/${msg.did}`
+            : `mycel/inbox/${msg.from}`;
+          client.publish(answerTarget, JSON.stringify({
+            type: 'answer', from: myPk, did: myDid, code: answerCode
           }));
           console.log('[MQTT] → answer till %s', msg.from.slice(0, 12));
         } catch (err) {
@@ -1641,16 +1686,19 @@ const MqttSignaling = {
         }
 
       } else if (msg.type === 'answer') {
-        // Jag är initiator
-        const conn = Peers.connections.get(msg.from);
-        if (conn?.channel?.readyState === 'open') return;
+        // Jag är initiator — kontrollera om just denna enhet redan är ansluten
+        const connKey = Peers.connKey(msg.from, msg.did);
+        const existing = Peers.connections.get(connKey);
+        if (existing?.channel?.readyState === 'open') return;
         try {
           await ManualSignaling.acceptAnswer(msg.code);
           console.log('[MQTT] Svar godkänt från %s — WebRTC öppnas', msg.from.slice(0, 12));
         } catch (err) {
           console.warn('[MQTT] Answer-fel:', err.message);
-          // tempId saknas — skicka nytt offer nästa beacon-cykel
-          MqttSignaling._lastOfferTo.delete(msg.from);
+          // Försök inte igen om tempId redan är förbrukat (t.ex. av en annan enhet)
+          if (!err.message.includes('Ingen matchande inbjudan')) {
+            MqttSignaling._lastOfferTo.delete(msg.from + ':' + (msg.did || ''));
+          }
         }
       }
     });
@@ -1666,18 +1714,19 @@ const MqttSignaling = {
   async _sendBeacons() {
     if (!MqttSignaling.client?.connected || !Identity.current) return;
     const myPk = Identity.current.pubkey;
+    const myDid = Identity.current.deviceId;
+    const beaconPayload = JSON.stringify({ type: 'beacon', from: myPk, did: myDid });
+
+    // Publicera till eget inbox — egna enheter på andra flikar/browsrar får veta vi finns
+    MqttSignaling.client.publish(`mycel/inbox/${myPk}`, beaconPayload);
+
     const peers = await Peers.getAll();
     for (const peer of peers) {
-      const conn = Peers.connections.get(peer.pubkey);
-      if (conn?.channel?.readyState === 'open') continue;
-      // Skicka beacon så peern vet att vi är online
-      MqttSignaling.client.publish(`mycel/inbox/${peer.pubkey}`, JSON.stringify({
-        type: 'beacon', from: myPk
-      }));
-      // Om jag är initiator: skapa offer direkt här — vänta inte reaktivt på peers beacon.
-      // Det halverar fördröjningen eftersom vi inte behöver vänta på peers beacon-intervall.
-      if (myPk < peer.pubkey) {
-        MqttSignaling._sendOfferTo(peer.pubkey);
+      if (Peers.connFor(peer.pubkey)?.channel?.readyState === 'open') continue;
+      MqttSignaling.client.publish(`mycel/inbox/${peer.pubkey}`, beaconPayload);
+      // Proaktivt offer (halverar fördröjning) — skickas till broadcast-ämne
+      if ((myPk + ':' + myDid) < (peer.pubkey + ':')) {
+        MqttSignaling._sendOfferTo(peer.pubkey, null, false);
       }
     }
   },
@@ -1687,21 +1736,32 @@ const MqttSignaling = {
     // Beacon skickas automatiskt vid nästa intervall.
   },
 
-  async _sendOfferTo(peerPk) {
+  async _sendOfferTo(peerPk, peerDid = null, allowSameIdentity = false) {
     if (!MqttSignaling.client?.connected || !Identity.current) return;
     const myPk = Identity.current.pubkey;
-    if (myPk >= peerPk) return; // bara initiator (lägre pubkey)
-    const conn = Peers.connections.get(peerPk);
-    if (conn?.channel?.readyState === 'open') return;
-    // Undvik offer-spam: max en gång per 10 s per peer
-    const last = MqttSignaling._lastOfferTo.get(peerPk) || 0;
+    const myDid = Identity.current.deviceId;
+
+    // Kontrollera om just denna enhet redan är ansluten
+    const connKey = Peers.connKey(peerPk, peerDid);
+    if (Peers.connections.get(connKey)?.channel?.readyState === 'open') return;
+    // För olika identiteter: hoppa över om vi har någon öppen kanal till dem
+    if (!allowSameIdentity && Peers.connFor(peerPk)?.channel?.readyState === 'open') return;
+
+    // Undvik offer-spam: max en gång per 10 s per enhet
+    const throttleKey = peerPk + ':' + (peerDid || '');
+    const last = MqttSignaling._lastOfferTo.get(throttleKey) || 0;
     if (Date.now() - last < 10000) return;
-    MqttSignaling._lastOfferTo.set(peerPk, Date.now());
+    MqttSignaling._lastOfferTo.set(throttleKey, Date.now());
+
     try {
       console.log('[MQTT] Skapar offer till %s…', peerPk.slice(0, 12));
       const { code } = await ManualSignaling.createOffer();
-      MqttSignaling.client.publish(`mycel/inbox/${peerPk}`, JSON.stringify({
-        type: 'offer', from: myPk, code
+      // Rikta offer till specifik enhet om vi känner till deviceId, annars broadcast
+      const target = peerDid
+        ? `mycel/inbox/${peerPk}/${peerDid}`
+        : `mycel/inbox/${peerPk}`;
+      MqttSignaling.client.publish(target, JSON.stringify({
+        type: 'offer', from: myPk, did: myDid, code
       }));
       console.log('[MQTT] → offer till %s', peerPk.slice(0, 12));
       const peers = await Peers.getAll();
@@ -1717,7 +1777,7 @@ const MqttSignaling = {
     if (!MqttSignaling.client?.connected || !Identity.current) return false;
     try {
       MqttSignaling.client.publish(`mycel/inbox/${toPubkey}`, JSON.stringify({
-        type: 'offer', from: Identity.current.pubkey, code
+        type: 'offer', from: Identity.current.pubkey, did: Identity.current.deviceId, code
       }));
       return true;
     } catch { return false; }
@@ -1764,6 +1824,7 @@ async function init() {
 
   let loggedIn = false;
   if (!loggedOut && currentDb) {
+    try {
     DB.DB_NAME = currentDb;
     if (!DB.db) await DB.open();
     const id = await Identity.load();
@@ -1794,6 +1855,10 @@ async function init() {
         UI.updateConnectionStatus(navigator.onLine || Peers.onlineCount() > 0);
       }, 3000);
       UI.updateConnectionStatus(navigator.onLine);
+    }
+    } catch (err) {
+      console.warn('[init] Kunde inte ladda session:', err.message);
+      sessionStorage.removeItem('currentDb');
     }
   }
 
@@ -1863,6 +1928,48 @@ async function init() {
         UI.renderFeed();
         UI.toast('🎉 Välkommen till Skrivpunkten!', 'success');
       }
+    } catch (err) {
+      UI.toast('Fel: ' + err.message, 'error');
+      btn.disabled = false;
+    }
+  });
+
+  // Onboarding — importera identitet från textkod
+  document.getElementById('btn-onboard-show-import')?.addEventListener('click', () => {
+    const section = document.getElementById('onboard-import-section');
+    const visible = section.style.display !== 'none';
+    section.style.display = visible ? 'none' : 'block';
+    if (!visible) document.getElementById('onboard-import-code')?.focus();
+  });
+
+  document.getElementById('btn-onboard-do-import')?.addEventListener('click', async () => {
+    const raw = document.getElementById('onboard-import-code')?.value?.trim();
+    if (!raw) { UI.toast('Klistra in en identitetskod först', 'error'); return; }
+    const btn = document.getElementById('btn-onboard-do-import');
+    btn.disabled = true;
+    try {
+      const data = JSON.parse(atob(raw));
+      if (!data.pubkey || !data.privkeyJwk || !data.name) throw new Error('Ogiltig identitetskod');
+      const newId = {
+        id: 'self',
+        name: data.name,
+        bio: data.bio || '',
+        pubkey: data.pubkey,
+        privkeyJwk: data.privkeyJwk,
+        deviceId: Crypto.uuid(),
+        createdAt: data.createdAt || Date.now()
+      };
+      const accounts = JSON.parse(localStorage.getItem('mycel-accounts') || '[]');
+      const dbName = 'mycel-' + newId.pubkey.slice(0, 16) + '-' + Date.now();
+      accounts.push({ name: newId.name, dbName });
+      localStorage.setItem('mycel-accounts', JSON.stringify(accounts));
+      DB.DB_NAME = dbName;
+      DB.db = null;
+      await DB.open();
+      await DB.put('identity', newId);
+      sessionStorage.removeItem('loggedOut');
+      sessionStorage.setItem('currentDb', dbName);
+      location.reload();
     } catch (err) {
       UI.toast('Fel: ' + err.message, 'error');
       btn.disabled = false;
@@ -1970,16 +2077,87 @@ async function init() {
     if (code) navigator.clipboard?.writeText(code).then(() => UI.toast('📋 Kopierat!', 'success'));
   });
 
-  // Identity
-  document.getElementById('btn-export-key')?.addEventListener('click', async () => {
+  // Identity — exportera som textkod
+  document.getElementById('btn-show-export-code')?.addEventListener('click', () => {
     if (!Identity.current) return;
-    const data = JSON.stringify({ name: Identity.current.name, pubkey: Identity.current.pubkey, privkeyJwk: Identity.current.privkeyJwk }, null, 2);
-    const blob = new Blob([data], { type: 'application/json' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'mycel-identity.json';
-    a.click();
-    UI.toast('💾 Nyckel exporterad', 'success');
+    const exportSection = document.getElementById('export-code-section');
+    const importSection = document.getElementById('import-code-section');
+    const isVisible = exportSection.style.display !== 'none';
+    exportSection.style.display = isVisible ? 'none' : 'block';
+    importSection.style.display = 'none';
+    if (!isVisible) {
+      const payload = { name: Identity.current.name, bio: Identity.current.bio, pubkey: Identity.current.pubkey, privkeyJwk: Identity.current.privkeyJwk, createdAt: Identity.current.createdAt };
+      document.getElementById('identity-export-code').value = btoa(JSON.stringify(payload));
+    }
+  });
+
+  document.getElementById('btn-copy-identity-code')?.addEventListener('click', () => {
+    const code = document.getElementById('identity-export-code')?.value;
+    if (!code) return;
+    navigator.clipboard?.writeText(code)
+      .then(() => UI.toast('📋 Identitetskod kopierad', 'success'))
+      .catch(() => UI.toast('Markera och kopiera koden manuellt', 'info'));
+  });
+
+  // Identity — importera från textkod
+  document.getElementById('btn-show-import-code')?.addEventListener('click', () => {
+    const importSection = document.getElementById('import-code-section');
+    const exportSection = document.getElementById('export-code-section');
+    const isVisible = importSection.style.display !== 'none';
+    importSection.style.display = isVisible ? 'none' : 'block';
+    exportSection.style.display = 'none';
+  });
+
+  document.getElementById('btn-do-import-code')?.addEventListener('click', async () => {
+    const raw = document.getElementById('identity-import-code')?.value?.trim();
+    if (!raw) { UI.toast('Klistra in en identitetskod först', 'error'); return; }
+    try {
+      const data = JSON.parse(atob(raw));
+      if (!data.pubkey || !data.privkeyJwk || !data.name) throw new Error('Ogiltig identitetsfil');
+      // Generera nytt deviceId för den här enheten
+      const newId = {
+        id: 'self',
+        name: data.name,
+        bio: data.bio || '',
+        pubkey: data.pubkey,
+        privkeyJwk: data.privkeyJwk,
+        deviceId: Crypto.uuid(),
+        createdAt: data.createdAt || Date.now()
+      };
+      // Skapa nytt konto i accounts-registret med eget IndexedDB
+      const accounts = JSON.parse(localStorage.getItem('mycel-accounts') || '[]');
+      const dbName = 'mycel-' + newId.pubkey.slice(0, 16) + '-' + Date.now();
+      accounts.push({ name: newId.name, dbName });
+      localStorage.setItem('mycel-accounts', JSON.stringify(accounts));
+      // Öppna det nya kontot och spara identiteten
+      const tempReq = indexedDB.open(dbName, DB.VERSION);
+      tempReq.onupgradeneeded = e => {
+        const tdb = e.target.result;
+        if (!tdb.objectStoreNames.contains('identity')) tdb.createObjectStore('identity', { keyPath: 'id' });
+        if (!tdb.objectStoreNames.contains('posts')) { const ps = tdb.createObjectStore('posts', { keyPath: 'id' }); ps.createIndex('by_timestamp', 'timestamp'); ps.createIndex('by_author', 'authorPubkey'); }
+        if (!tdb.objectStoreNames.contains('peers')) tdb.createObjectStore('peers', { keyPath: 'pubkey' });
+        if (!tdb.objectStoreNames.contains('seen')) tdb.createObjectStore('seen', { keyPath: 'id' });
+        if (!tdb.objectStoreNames.contains('likes')) { const ls = tdb.createObjectStore('likes', { keyPath: 'id' }); ls.createIndex('by_post', 'postId'); }
+        if (!tdb.objectStoreNames.contains('comments')) { const cs = tdb.createObjectStore('comments', { keyPath: 'id' }); cs.createIndex('by_post', 'postId'); }
+        if (!tdb.objectStoreNames.contains('comment_likes')) { const cl = tdb.createObjectStore('comment_likes', { keyPath: 'id' }); cl.createIndex('by_comment', 'commentId'); }
+      };
+      tempReq.onsuccess = async () => {
+        const tempDb = tempReq.result;
+        await new Promise((res, rej) => {
+          const tx = tempDb.transaction('identity', 'readwrite');
+          tx.objectStore('identity').put(newId);
+          tx.oncomplete = res;
+          tx.onerror = () => rej(tx.error);
+        });
+        tempDb.close();
+        sessionStorage.removeItem('loggedOut');
+        sessionStorage.setItem('currentDb', dbName);
+        location.reload();
+      };
+      tempReq.onerror = () => UI.toast('Fel vid skapande av databas', 'error');
+    } catch (err) {
+      UI.toast('Fel: ' + err.message, 'error');
+    }
   });
 
   document.getElementById('btn-edit-profile')?.addEventListener('click', () => {

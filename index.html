@@ -703,6 +703,14 @@
       <p class="text-muted text-center mt-8" style="font-size:10px;">
         Dina nycklar genereras lokalt och lämnar aldrig din enhet.
       </p>
+      <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:16px;">
+        <button class="btn btn-ghost btn-sm w-full" id="btn-onboard-show-import">📥 Har du redan ett konto? Importera hit</button>
+        <div id="onboard-import-section" style="display:none;margin-top:12px;">
+          <label class="form-label">Klistra in identitetskod från din andra enhet</label>
+          <textarea id="onboard-import-code" placeholder="Klistra in kod här…" style="width:100%;height:80px;font-family:monospace;font-size:10px;resize:none;word-break:break-all;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:8px;box-sizing:border-box;color:var(--text);"></textarea>
+          <button class="btn btn-primary w-full mt-8" id="btn-onboard-do-import">Importera identitet</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -806,9 +814,20 @@
       </div>
       <div class="form-label mt-12">Publik nyckel (din adress i nätverket)</div>
       <div class="identity-pubkey" id="id-pubkey-full">—</div>
-      <div class="flex gap-8 mt-12">
-        <button class="btn btn-ghost btn-sm" id="btn-export-key">💾 Exportera nyckel</button>
+      <div class="flex gap-8 mt-12" style="flex-wrap:wrap;">
+        <button class="btn btn-ghost btn-sm" id="btn-show-export-code">📤 Flytta till ny enhet</button>
+        <button class="btn btn-ghost btn-sm" id="btn-show-import-code">📥 Importera identitet</button>
         <button class="btn btn-ghost btn-sm" id="btn-edit-profile">✏ Redigera</button>
+      </div>
+      <div id="export-code-section" style="display:none;margin-top:12px;">
+        <div class="form-label">Kopiera koden och klistra in på den nya enheten</div>
+        <textarea id="identity-export-code" readonly style="width:100%;height:80px;font-family:monospace;font-size:10px;resize:none;word-break:break-all;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:8px;box-sizing:border-box;color:var(--text);"></textarea>
+        <button class="btn btn-primary btn-sm w-full mt-8" id="btn-copy-identity-code">📋 Kopiera kod</button>
+      </div>
+      <div id="import-code-section" style="display:none;margin-top:12px;">
+        <div class="form-label">Klistra in identitetskoden från din andra enhet</div>
+        <textarea id="identity-import-code" placeholder="Klistra in kod här…" style="width:100%;height:80px;font-family:monospace;font-size:10px;resize:none;word-break:break-all;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:8px;box-sizing:border-box;color:var(--text);"></textarea>
+        <button class="btn btn-primary btn-sm w-full mt-8" id="btn-do-import-code">Importera</button>
       </div>
     </div>
 
