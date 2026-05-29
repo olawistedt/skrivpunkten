@@ -158,8 +158,10 @@ const DB = {
   async put(store, obj) {
     return new Promise((resolve, reject) => {
       const tx = DB.db.transaction(store, 'readwrite');
-      tx.objectStore(store).put(obj).onsuccess = e => resolve(e.target.result);
-      tx.onerror = e => reject(e.target.error);
+      tx.objectStore(store).put(obj);
+      tx.oncomplete = () => resolve();
+      tx.onerror   = e => reject(e.target.error);
+      tx.onabort   = e => reject(e.target.error);
     });
   },
 
@@ -182,9 +184,11 @@ const DB = {
   },
 
   async delete(store, key) {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       const tx = DB.db.transaction(store, 'readwrite');
-      tx.objectStore(store).delete(key).onsuccess = () => resolve();
+      tx.objectStore(store).delete(key);
+      tx.oncomplete = () => resolve();
+      tx.onerror    = e => reject(e.target.error);
     });
   },
 
@@ -1324,9 +1328,17 @@ const UI = {
     document.getElementById('screen-onboard').classList.remove('active');
     document.getElementById('bottom-nav').style.display = 'block';
     UI.showScreen('feed');
+    if (!UI._feedPollInterval) {
+      UI._feedPollInterval = setInterval(() => {
+        if (UI.currentScreen === 'feed') UI.renderFeed();
+      }, 2500);
+    }
   },
 
+  _feedVersion: 0,
+
   renderFeed() {
+    const version = ++UI._feedVersion;
     const myPk = Identity.current?.pubkey;
     // Kom ihåg vilka kommentarssektioner som är öppna innan vi bygger om DOM:en
     const openComments = new Set(
@@ -1334,6 +1346,7 @@ const UI = {
     );
     Promise.all([Posts.getAll(), Likes.getAll(), Comments.getAll(), CommentLikes.getAll()])
       .then(([posts, allLikes, allComments, allCommentLikes]) => {
+        if (UI._feedVersion !== version) return; // ett nyare anrop hann före — avbryt
         const container = document.getElementById('feed-list');
         const label = document.getElementById('feed-label');
         if (!container) return;
@@ -1434,7 +1447,8 @@ const UI = {
           const el = document.getElementById(`comments-${postId}`);
           if (el) el.hidden = false;
         }
-      });
+      })
+      .catch(err => console.error('[renderFeed]', err));
   },
 
   async likePost(id) {
