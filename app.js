@@ -257,6 +257,16 @@ const Identity = {
     return emojis[idx];
   },
 
+  avatarHTML(pubkey) {
+    const image = Identity.current?.pubkey === pubkey
+      ? Identity.current?.profileImage
+      : Peers.imageCache.get(pubkey);
+    if (image) {
+      return `<img src="${image}" alt="" style="width:100%;height:100%;border-radius:50%;object-fit:cover;display:block;">`;
+    }
+    return Identity.avatarEmoji(pubkey);
+  },
+
   /** Social Recovery — dela privat nyckel i N fragment */
   async createRecoveryShards(n = 3) {
     const jwkStr = JSON.stringify(Identity.current.privkeyJwk);
@@ -435,6 +445,7 @@ const CommentLikes = {
 // ══════════════════════════════════════════════════════════
 const Peers = {
   connections: new Map(), // pubkey:deviceId → { channel, lastSeen, name }
+  imageCache: new Map(),  // pubkey → dataURL
 
   async getAll() {
     return DB.getAll('peers');
@@ -447,6 +458,22 @@ const Peers = {
       addedAt: Date.now(),
       lastSeen: peer.lastSeen || Date.now()
     });
+  },
+
+  async loadImageCache() {
+    const peers = await DB.getAll('peers');
+    for (const p of peers) {
+      if (p.profileImage) Peers.imageCache.set(p.pubkey, p.profileImage);
+    }
+  },
+
+  async storeImage(pubkey, image) {
+    Peers.imageCache.set(pubkey, image);
+    const peer = await DB.get('peers', pubkey);
+    if (peer) {
+      peer.profileImage = image;
+      await DB.put('peers', peer);
+    }
   },
 
   /** Skapa identitetskod (pubkey+namn) att visa som QR/text för lokal återkänning */
@@ -981,6 +1008,20 @@ const Gossip = {
           Gossip.forwardToOthers(msg, fromPubkey);
         }
         break;
+
+      case 'profile_image':
+        if (msg.pubkey && msg.image && msg.pubkey !== Identity.current?.pubkey) {
+          await Peers.storeImage(msg.pubkey, msg.image);
+          const node = Network.nodes.get(msg.pubkey);
+          if (node) {
+            const img = new Image();
+            img.onload = () => { node.img = img; };
+            img.src = msg.image;
+          }
+          UI.renderFeed();
+          UI.renderPeers();
+        }
+        break;
     }
   },
 
@@ -1007,6 +1048,13 @@ const Gossip = {
       type: 'sync_request',
       from: Identity.current.pubkey
     }));
+    if (Identity.current?.profileImage) {
+      conn.channel.send(JSON.stringify({
+        type: 'profile_image',
+        pubkey: Identity.current.pubkey,
+        image: Identity.current.profileImage
+      }));
+    }
   },
 
   forwardToOthers(msg, exceptPubkey) {
@@ -1055,14 +1103,24 @@ const Network = {
     const H = canvas?.clientHeight || 200;
     const angle = Math.random() * Math.PI * 2;
     const r = 40 + Math.random() * 60;
-    Network.nodes.set(pubkey, {
+    const node = {
       x: W / 2 + Math.cos(angle) * (isSelf ? 0 : r),
       y: H / 2 + Math.sin(angle) * (isSelf ? 0 : r),
       name, isSelf,
       emoji: Identity.avatarEmoji(pubkey),
+      img: null,
       vx: (Math.random() - 0.5) * 0.5,
       vy: (Math.random() - 0.5) * 0.5
-    });
+    };
+    Network.nodes.set(pubkey, node);
+    const imgSrc = isSelf
+      ? Identity.current?.profileImage
+      : Peers.imageCache.get(pubkey);
+    if (imgSrc) {
+      const img = new Image();
+      img.onload = () => { node.img = img; };
+      img.src = imgSrc;
+    }
 
     if (!isSelf && Identity.current) {
       Network.edges.push({ a: Identity.current.pubkey, b: pubkey });
@@ -1146,11 +1204,21 @@ const Network = {
       ctx.fill();
       ctx.stroke();
 
-      // Emoji
-      ctx.font = `${isSelected ? 14 : 12}px serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(node.emoji, node.x, node.y);
+      // Avatar: profilbild eller emoji
+      const nr = isSelected ? 14 : 10;
+      if (node.img) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, nr, 0, Math.PI * 2);
+        ctx.clip();
+        ctx.drawImage(node.img, node.x - nr, node.y - nr, nr * 2, nr * 2);
+        ctx.restore();
+      } else {
+        ctx.font = `${isSelected ? 14 : 12}px serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(node.emoji, node.x, node.y);
+      }
 
       // Name
       ctx.font = '9px Space Mono, monospace';
@@ -1322,7 +1390,7 @@ const UI = {
             const cLikeLabel = cHasLikes ? `♥ ${cLikes.length}` : '♡';
             const cLikeTitle = cLikes.map(l => escHtml(l.likerName || l.likerPubkey.slice(0, 8))).join(', ');
             return `<div class="comment">
-              <div class="avatar" style="font-size:18px;line-height:1">${Identity.avatarEmoji(c.authorPubkey)}</div>
+              <div class="avatar" style="font-size:18px;line-height:1">${Identity.avatarHTML(c.authorPubkey)}</div>
               <div class="comment-body">
                 <div class="comment-meta"><strong>${escHtml(c.authorName || 'Okänd')}</strong>${timeAgo(c.timestamp)}</div>
                 <div class="comment-text">${escHtml(c.text)}</div>
@@ -1334,7 +1402,7 @@ const UI = {
           return `
           <div class="post-card" data-id="${p.id}">
             <div class="post-header">
-              <div class="avatar">${Identity.avatarEmoji(p.authorPubkey)}</div>
+              <div class="avatar">${Identity.avatarHTML(p.authorPubkey)}</div>
               <div class="post-author">
                 <strong>${escHtml(p.authorName || 'Okänd')}</strong>
                 <span>${Identity.shortKey(p.authorPubkey)} · ${timeAgo(p.timestamp)}</span>
@@ -1480,7 +1548,7 @@ const UI = {
         return `
           <div class="peer-card" style="flex-wrap:wrap;align-items:flex-start;">
             <div style="display:flex;align-items:center;gap:10px;width:100%;">
-              <div class="avatar">${Identity.avatarEmoji(p.pubkey)}</div>
+              <div class="avatar">${Identity.avatarHTML(p.pubkey)}</div>
               <div class="peer-info">
                 <strong>${escHtml(p.name)}</strong>
                 <span>${Identity.shortKey(p.pubkey)}</span>
@@ -1852,6 +1920,7 @@ async function init() {
     const id = await Identity.load();
     if (id) {
       loggedIn = true;
+      await Peers.loadImageCache();
       UI.updateHeaderCompose();
       UI.showMainApp();
       Gossip.init();
@@ -1995,6 +2064,13 @@ async function init() {
 
   // Compose
   const composeText = document.getElementById('compose-text');
+  composeText?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      document.getElementById('btn-post')?.click();
+    }
+  });
+
   composeText?.addEventListener('input', () => {
     const len = composeText.value.length;
     const cc = document.getElementById('char-count');
