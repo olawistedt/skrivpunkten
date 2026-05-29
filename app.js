@@ -1528,7 +1528,12 @@ const UI = {
     const id = Identity.current;
     const emoji = Identity.avatarEmoji(id.pubkey);
 
-    document.getElementById('id-avatar').textContent = emoji;
+    const idAv = document.getElementById('id-avatar');
+    if (id.profileImage) {
+      idAv.innerHTML = `<img src="${id.profileImage}" alt="">`;
+    } else {
+      idAv.textContent = emoji;
+    }
     document.getElementById('id-name').textContent = id.name;
     document.getElementById('id-bio').textContent = id.bio || 'Ingen biografi';
     document.getElementById('id-pubkey-full').textContent = id.pubkey;
@@ -1575,7 +1580,13 @@ const UI = {
     const av = document.getElementById('compose-avatar');
     const nm = document.getElementById('compose-name-display');
     const pk = document.getElementById('compose-pubkey-short');
-    if (av) av.textContent = Identity.avatarEmoji(Identity.current.pubkey);
+    if (av) {
+      if (Identity.current.profileImage) {
+        av.innerHTML = `<img src="${Identity.current.profileImage}" alt="">`;
+      } else {
+        av.textContent = Identity.avatarEmoji(Identity.current.pubkey);
+      }
+    }
     if (nm) nm.textContent = Identity.current.name;
     if (pk) pk.textContent = Identity.shortKey(Identity.current.pubkey);
   }
@@ -2164,6 +2175,34 @@ async function init() {
     } catch (err) {
       UI.toast('Fel: ' + err.message, 'error');
     }
+  });
+
+  document.getElementById('avatar-file-input')?.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file || !Identity.current) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = async () => {
+        const size = 128;
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        const ratio = Math.max(size / img.width, size / img.height);
+        const w = img.width * ratio;
+        const h = img.height * ratio;
+        ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
+        Identity.current.profileImage = canvas.toDataURL('image/jpeg', 0.85);
+        await DB.put('identity', Identity.current);
+        UI.renderIdentity();
+        UI.updateHeaderCompose();
+        UI.toast('✓ Profilbild uppdaterad', 'success');
+      };
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
   });
 
   document.getElementById('btn-edit-profile')?.addEventListener('click', () => {

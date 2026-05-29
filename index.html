@@ -154,6 +154,20 @@
       background: linear-gradient(135deg, rgba(13,122,110,0.08), rgba(13,122,110,0.03));
     }
 
+    /* ── Avatar upload ── */
+    .avatar-upload { display: flex; flex-direction: column; align-items: center; gap: 5px; flex-shrink: 0; }
+    .avatar-upload-overlay {
+      font-size: 20px;
+      color: var(--accent);
+      cursor: pointer;
+      letter-spacing: 0.04em;
+      white-space: nowrap;
+      border-bottom: 1px solid var(--accent-glow);
+      transition: color var(--transition);
+    }
+    .avatar-upload-overlay:hover { color: var(--accent-dim); }
+    .avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block; }
+
     /* ── Tema-toggle ── */
     .theme-switch-wrapper { display: flex; align-items: center; gap: 8px; margin-left: 12px; }
     .theme-label { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
@@ -861,7 +875,11 @@
     <div class="card highlight">
       <div class="section-title">Din identitet</div>
       <div class="flex gap-12 items-center">
-        <div class="avatar" id="id-avatar" style="width:48px;height:48px;font-size:22px;">?</div>
+        <div class="avatar-upload">
+          <div class="avatar" id="id-avatar" style="width:48px;height:48px;font-size:22px;">?</div>
+          <label class="avatar-upload-overlay" for="avatar-file-input">📷 Byt bild</label>
+          <input type="file" id="avatar-file-input" accept="image/*" style="display:none;">
+        </div>
         <div>
           <div style="font-family:var(--font-display);font-size:18px;font-weight:700;" id="id-name">—</div>
           <div class="text-muted" style="font-size:12px;" id="id-bio">—</div>
@@ -884,14 +902,6 @@
         <textarea id="identity-import-code" placeholder="Klistra in kod här…" style="width:100%;height:80px;font-family:monospace;font-size:10px;resize:none;word-break:break-all;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:8px;box-sizing:border-box;color:var(--text);"></textarea>
         <button class="btn btn-primary btn-sm w-full mt-8" id="btn-do-import-code">Importera</button>
       </div>
-    <div class="card mt-12">
-      <div class="section-title">Din publik nyckel</div>
-      <p class="text-muted" style="font-size:11px;margin-bottom:8px;">
-        Enbart för identifikation — <strong>inte</strong> en anslutningskod.
-      </p>
-      <div class="identity-pubkey" id="identity-info-text" style="font-size:9px;"></div>
-    </div>
-
     <div class="card mt-12">
       <div class="section-title">Social Recovery</div>
       <p class="text-muted" style="font-size:12px;margin-bottom:12px;">
