@@ -3,7 +3,7 @@
  * Offline-First caching + bakgrundssynkronisering
  */
 
-const CACHE_NAME = 'mycel-v1.0.0';
+const CACHE_NAME = 'mycel-v1.0.1';
 const STATIC_ASSETS = [
   '/',
   '/index.html',

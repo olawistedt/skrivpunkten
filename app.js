@@ -232,7 +232,12 @@ const Identity = {
       await DB.put('identity', id);
     }
     Identity.current = id;
-    Identity.privateKey = await Crypto.importPrivateKey(id.privkeyJwk);
+    try {
+      Identity.privateKey = await Crypto.importPrivateKey(id.privkeyJwk);
+    } catch {
+      Identity.privateKey = null;
+      console.warn('[Identity] crypto.subtle ej tillgängligt — kräver HTTPS');
+    }
     return id;
   },
 
@@ -1827,6 +1832,11 @@ async function init() {
     try {
     DB.DB_NAME = currentDb;
     if (!DB.db) await DB.open();
+    const pendingImport = sessionStorage.getItem('pendingImport');
+    if (pendingImport) {
+      sessionStorage.removeItem('pendingImport');
+      try { await DB.put('identity', JSON.parse(pendingImport)); } catch (e) { console.warn('[init] DB.put fel:', e.message); }
+    }
     const id = await Identity.load();
     if (id) {
       loggedIn = true;
@@ -1942,11 +1952,9 @@ async function init() {
     if (!visible) document.getElementById('onboard-import-code')?.focus();
   });
 
-  document.getElementById('btn-onboard-do-import')?.addEventListener('click', async () => {
+  document.getElementById('btn-onboard-do-import')?.addEventListener('click', () => {
     const raw = document.getElementById('onboard-import-code')?.value?.trim();
     if (!raw) { UI.toast('Klistra in en identitetskod först', 'error'); return; }
-    const btn = document.getElementById('btn-onboard-do-import');
-    btn.disabled = true;
     try {
       const data = JSON.parse(atob(raw));
       if (!data.pubkey || !data.privkeyJwk || !data.name) throw new Error('Ogiltig identitetskod');
@@ -1959,20 +1967,16 @@ async function init() {
         deviceId: Crypto.uuid(),
         createdAt: data.createdAt || Date.now()
       };
-      const accounts = JSON.parse(localStorage.getItem('mycel-accounts') || '[]');
       const dbName = 'mycel-' + newId.pubkey.slice(0, 16) + '-' + Date.now();
+      const accounts = JSON.parse(localStorage.getItem('mycel-accounts') || '[]');
       accounts.push({ name: newId.name, dbName });
       localStorage.setItem('mycel-accounts', JSON.stringify(accounts));
-      DB.DB_NAME = dbName;
-      DB.db = null;
-      await DB.open();
-      await DB.put('identity', newId);
+      sessionStorage.setItem('pendingImport', JSON.stringify(newId));
       sessionStorage.removeItem('loggedOut');
       sessionStorage.setItem('currentDb', dbName);
       location.reload();
     } catch (err) {
       UI.toast('Fel: ' + err.message, 'error');
-      btn.disabled = false;
     }
   });
 
