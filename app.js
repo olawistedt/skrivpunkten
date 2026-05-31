@@ -1929,11 +1929,24 @@ async function init() {
     const pendingImport = sessionStorage.getItem('pendingImport');
     if (pendingImport) {
       sessionStorage.removeItem('pendingImport');
-      try { await DB.put('identity', JSON.parse(pendingImport)); } catch (e) { console.warn('[init] DB.put fel:', e.message); }
+      try {
+        const importedId = JSON.parse(pendingImport);
+        const existingId = await DB.get('identity', 'self');
+        const mergedId = { ...importedId };
+        if (existingId && existingId.profileImage) mergedId.profileImage = existingId.profileImage;
+        await DB.put('identity', mergedId);
+      } catch (e) { console.warn('[init] DB.put fel:', e.message); }
     }
     const id = await Identity.load();
     if (id) {
       loggedIn = true;
+      // Store pubkey in accounts registry so future imports can find this DB
+      const accts = JSON.parse(localStorage.getItem('mycel-accounts') || '[]');
+      const acctEntry = accts.find(a => a.dbName === DB.DB_NAME);
+      if (acctEntry && !acctEntry.pubkey && id.pubkey) {
+        acctEntry.pubkey = id.pubkey;
+        localStorage.setItem('mycel-accounts', JSON.stringify(accts));
+      }
       await Peers.loadImageCache();
       UI.updateHeaderCompose();
       UI.showMainApp();
@@ -2048,7 +2061,7 @@ async function init() {
     if (!visible) document.getElementById('onboard-name')?.focus();
   });
 
-  document.getElementById('btn-onboard-do-import')?.addEventListener('click', () => {
+  document.getElementById('btn-onboard-do-import')?.addEventListener('click', async () => {
     const raw = document.getElementById('onboard-import-code')?.value?.trim();
     if (!raw) { UI.toast('Klistra in en identitetskod först', 'error'); return; }
     try {
@@ -2063,10 +2076,43 @@ async function init() {
         deviceId: Crypto.uuid(),
         createdAt: data.createdAt || Date.now()
       };
-      const dbName = 'mycel-' + newId.pubkey.slice(0, 16) + '-' + Date.now();
       const accounts = JSON.parse(localStorage.getItem('mycel-accounts') || '[]');
-      accounts.push({ name: newId.name, dbName });
-      localStorage.setItem('mycel-accounts', JSON.stringify(accounts));
+
+      // Scan all known databases to find one that belongs to this pubkey
+      let matchedDbName = null;
+      for (const account of accounts) {
+        try {
+          const tempDb = await new Promise(res => {
+            const req = indexedDB.open(account.dbName);
+            req.onsuccess = e => res(e.target.result);
+            req.onerror = () => res(null);
+          });
+          if (!tempDb) continue;
+          const storedId = await new Promise(res => {
+            try {
+              const tx = tempDb.transaction('identity', 'readonly');
+              tx.objectStore('identity').get('self').onsuccess = e => res(e.target.result);
+              tx.onerror = () => res(null);
+            } catch { res(null); }
+          });
+          tempDb.close();
+          if (storedId?.pubkey === data.pubkey) {
+            matchedDbName = account.dbName;
+            if (!account.pubkey) { account.pubkey = data.pubkey; localStorage.setItem('mycel-accounts', JSON.stringify(accounts)); }
+            break;
+          }
+        } catch { /* DB unreadable, skip */ }
+      }
+
+      let dbName;
+      if (matchedDbName) {
+        dbName = matchedDbName;
+      } else {
+        dbName = 'mycel-' + newId.pubkey.slice(0, 16) + '-' + Date.now();
+        accounts.push({ name: newId.name, dbName, pubkey: data.pubkey });
+        localStorage.setItem('mycel-accounts', JSON.stringify(accounts));
+      }
+
       sessionStorage.setItem('pendingImport', JSON.stringify(newId));
       sessionStorage.removeItem('loggedOut');
       sessionStorage.setItem('currentDb', dbName);
