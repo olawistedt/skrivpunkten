@@ -621,6 +621,23 @@
       font-weight: 700;
     }
     .nav-icon-wrap { position: relative; }
+    #notification-badge { background: #e53935; color: #fff; }
+
+    .notification-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 14px 16px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      margin-bottom: 8px;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .notification-item em { color: var(--text-muted); font-style: italic; }
+    .notification-time { font-size: 11px; color: var(--text-faint); white-space: nowrap; flex-shrink: 0; }
 
     /* ═══════════════════════════════════
        NETWORK VISUALIZER
@@ -735,6 +752,13 @@
         </span>
         Peers
       </button>
+      <button class="nav-btn" data-screen="notifications">
+        <span class="nav-icon-wrap">
+          <span class="icon">🔔</span>
+          <span class="badge" id="notification-badge" style="display:none">0</span>
+        </span>
+        Aviseringar
+      </button>
       <button class="nav-btn" data-screen="identity">
         <span class="nav-icon-wrap"><span class="icon">⚙️</span></span>
         Inställningar
@@ -817,6 +841,12 @@
     <div id="feed-list">
       <!-- Posts injected here -->
     </div>
+  </div>
+
+  <!-- ═══ AVISERINGAR ═══ -->
+  <div id="screen-notifications" class="screen">
+    <div class="section-title">Aviseringar</div>
+    <div id="notifications-list"></div>
   </div>
 
   <!-- ═══ PEERS ═══ -->

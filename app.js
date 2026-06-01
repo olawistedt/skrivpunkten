@@ -445,6 +445,67 @@ const CommentLikes = {
 };
 
 // ══════════════════════════════════════════════════════════
+// 4e. AVISERINGAR
+// ══════════════════════════════════════════════════════════
+const Notifications = {
+  _lsKey: 'mycel-notif-last-read',
+
+  getLastRead() {
+    return parseInt(localStorage.getItem(Notifications._lsKey) || '0');
+  },
+
+  markAllRead() {
+    localStorage.setItem(Notifications._lsKey, Date.now().toString());
+  },
+
+  async getAll() {
+    if (!Identity.current) return [];
+    const myPk = Identity.current.pubkey;
+    const lastRead = Notifications.getLastRead();
+
+    const [posts, likes, comments, commentLikes] = await Promise.all([
+      Posts.getAll(), Likes.getAll(), Comments.getAll(), CommentLikes.getAll()
+    ]);
+
+    const myPosts = new Map(posts.filter(p => p.authorPubkey === myPk).map(p => [p.id, p]));
+    const myComments = new Map(comments.filter(c => c.authorPubkey === myPk).map(c => [c.id, c]));
+    const myCommentedPostIds = new Set([...myComments.values()].map(c => c.postId));
+
+    const notifs = [];
+
+    for (const like of likes) {
+      if (like.timestamp > lastRead && myPosts.has(like.postId) && like.likerPubkey !== myPk) {
+        const post = myPosts.get(like.postId);
+        notifs.push({ type: 'post_like', actor: like.likerName || like.likerPubkey.slice(0,8), ref: post.text, timestamp: like.timestamp });
+      }
+    }
+    for (const c of comments) {
+      if (c.timestamp > lastRead && c.authorPubkey !== myPk) {
+        if (myPosts.has(c.postId)) {
+          const post = myPosts.get(c.postId);
+          notifs.push({ type: 'post_comment', actor: c.authorName || c.authorPubkey.slice(0,8), ref: post.text, extra: c.text, timestamp: c.timestamp });
+        } else if (myCommentedPostIds.has(c.postId)) {
+          const post = posts.find(p => p.id === c.postId);
+          notifs.push({ type: 'thread_comment', actor: c.authorName || c.authorPubkey.slice(0,8), ref: post ? post.text : '', extra: c.text, timestamp: c.timestamp });
+        }
+      }
+    }
+    for (const cl of commentLikes) {
+      if (cl.timestamp > lastRead && myComments.has(cl.commentId) && cl.likerPubkey !== myPk) {
+        const comment = myComments.get(cl.commentId);
+        notifs.push({ type: 'comment_like', actor: cl.likerName || cl.likerPubkey.slice(0,8), ref: comment.text, timestamp: cl.timestamp });
+      }
+    }
+
+    return notifs.sort((a, b) => b.timestamp - a.timestamp);
+  },
+
+  async unreadCount() {
+    return (await Notifications.getAll()).length;
+  }
+};
+
+// ══════════════════════════════════════════════════════════
 // 5. PEER-HANTERING
 // ══════════════════════════════════════════════════════════
 const Peers = {
@@ -973,9 +1034,11 @@ const Gossip = {
         }
         if (newCount > 0) {
           UI.renderFeed();
+          UI.updateNotificationBadge();
           UI.toast(`🔄 Synkroniserade ${newCount} nya inlägg`, 'info');
         } else if (msg.likes?.length || msg.comments?.length || msg.commentLikes?.length) {
           UI.renderFeed();
+          UI.updateNotificationBadge();
         }
         break;
       }
@@ -991,6 +1054,7 @@ const Gossip = {
         if (msg.like?.postId && msg.like?.likerPubkey) {
           await Likes.add(msg.like);
           UI.renderFeed();
+          UI.updateNotificationBadge();
           Gossip.forwardToOthers(msg, fromPubkey);
         }
         break;
@@ -1000,6 +1064,7 @@ const Gossip = {
           const isNew = await Comments.receiveFromGossip(msg.comment);
           if (isNew) {
             UI.renderFeed();
+            UI.updateNotificationBadge();
             Gossip.forwardToOthers(msg, fromPubkey);
           }
         }
@@ -1009,6 +1074,7 @@ const Gossip = {
         if (msg.like?.commentId && msg.like?.likerPubkey) {
           await CommentLikes.add(msg.like);
           UI.renderFeed();
+          UI.updateNotificationBadge();
           Gossip.forwardToOthers(msg, fromPubkey);
         }
         break;
@@ -1323,6 +1389,7 @@ const UI = {
     if (name === 'feed') UI.renderFeed();
     if (name === 'peers') { UI.renderPeers(); UI.renderQR(); }
     if (name === 'identity') UI.renderIdentity();
+    if (name === 'notifications') UI.renderNotifications();
   },
 
   showMainApp() {
@@ -1438,7 +1505,7 @@ const UI = {
               <div class="comment-form">
                 <input type="text" class="comment-input" id="comment-input-${p.id}"
                   placeholder="Skriv en kommentar…" maxlength="500"
-                  onkeydown="if(event.key==='Enter')UI.addComment('${p.id}')">
+                  onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();UI.addComment('${p.id}');}">
                 <button class="comment-submit" onclick="UI.addComment('${p.id}')">→</button>
               </div>
             </div>
@@ -1488,13 +1555,15 @@ const UI = {
     const text = input?.value.trim();
     if (!text) return;
     input.value = '';
+    input.blur();
     const comment = await Comments.create(postId, text);
     Gossip.broadcast({ type: 'comment', comment });
     UI.renderFeed();
-    // Återöppna kommentarssektionen efter renderingen
     setTimeout(() => {
       const el = document.getElementById(`comments-${postId}`);
       if (el) el.hidden = false;
+      const newInput = document.getElementById(`comment-input-${postId}`);
+      if (newInput) newInput.focus();
     }, 0);
   },
 
@@ -1658,6 +1727,41 @@ const UI = {
     const label = document.getElementById('connection-label');
     if (dot) dot.className = `status-dot ${online ? 'online' : ''}`;
     if (label) label.textContent = online ? `Online · ${Peers.onlineCount()} peers` : 'Offline';
+  },
+
+  async updateNotificationBadge() {
+    const count = await Notifications.unreadCount();
+    const badge = document.getElementById('notification-badge');
+    if (!badge) return;
+    if (count > 0) {
+      badge.textContent = count > 9 ? '9+' : count;
+      badge.style.display = 'flex';
+    } else {
+      badge.style.display = 'none';
+    }
+  },
+
+  renderNotifications() {
+    const container = document.getElementById('notifications-list');
+    if (!container) return;
+    container.innerHTML = '<p class="text-muted" style="padding:32px;text-align:center;font-size:13px;">Laddar…</p>';
+    Notifications.getAll().then(notifs => {
+      if (notifs.length === 0) {
+        container.innerHTML = '<p class="text-muted" style="padding:32px;text-align:center;font-size:13px;">Inga nya aviseringar</p>';
+      } else {
+        const labels = {
+          post_like:      (n) => `<strong>${escHtml(n.actor)}</strong> gillade ditt inlägg: <em>"${escHtml(n.ref.slice(0,60))}…"</em>`,
+          post_comment:   (n) => `<strong>${escHtml(n.actor)}</strong> kommenterade ditt inlägg: <em>"${escHtml((n.extra||'').slice(0,60))}…"</em>`,
+          thread_comment: (n) => `<strong>${escHtml(n.actor)}</strong> kommenterade i en tråd du deltar i: <em>"${escHtml((n.extra||'').slice(0,60))}…"</em>`,
+          comment_like:   (n) => `<strong>${escHtml(n.actor)}</strong> gillade din kommentar: <em>"${escHtml(n.ref.slice(0,60))}…"</em>`,
+        };
+        container.innerHTML = notifs.map(n =>
+          `<div class="notification-item"><span>${labels[n.type]?.(n) ?? ''}</span><span class="notification-time">${timeAgo(n.timestamp)}</span></div>`
+        ).join('');
+      }
+      Notifications.markAllRead();
+      UI.updateNotificationBadge();
+    });
   },
 
   updateHeaderCompose() {
@@ -1950,6 +2054,7 @@ async function init() {
       }
       await Peers.loadImageCache();
       UI.updateHeaderCompose();
+      UI.updateNotificationBadge();
       UI.showMainApp();
       Gossip.init();
       Network.init();
@@ -2013,6 +2118,7 @@ async function init() {
         sessionStorage.removeItem('loggedOut');
         await Identity.load();
         UI.updateHeaderCompose();
+        UI.updateNotificationBadge();
         UI.showMainApp();
         Gossip.init();
         Network.init();
