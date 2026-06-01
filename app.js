@@ -1340,6 +1340,7 @@ const UI = {
   _feedVersion: 0,
 
   renderFeed() {
+    if (document.activeElement?.classList.contains('comment-input')) return;
     const version = ++UI._feedVersion;
     const myPk = Identity.current?.pubkey;
     // Kom ihåg vilka kommentarssektioner som är öppna innan vi bygger om DOM:en
