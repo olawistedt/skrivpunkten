@@ -2029,22 +2029,18 @@ async function init() {
         await DB.open();
         sessionStorage.setItem('currentDb', dbName);
         sessionStorage.removeItem('loggedOut');
-        accounts.push({ name, dbName });
-        localStorage.setItem('mycel-accounts', JSON.stringify(accounts));
         await Identity.create(name, bio);
-        UI.updateHeaderCompose();
-        UI.showMainApp();
-        Gossip.init();
-        Network.init();
-        SW.register();
-        MqttSignaling.connect();
+        accounts.push({ name, dbName, pubkey: Identity.current.pubkey });
+        localStorage.setItem('mycel-accounts', JSON.stringify(accounts));
 
-        // Demo-inlägg
-        await Posts.create(
-          `Hej världen! 🌿 Det här är mitt första inlägg på Skrivpunkten — det decentraliserade nätverket som jag äger. Inga servrar. Inga mellanhänder. Bara ren kryptografi och skvaller.`
-        );
-        UI.renderFeed();
-        UI.toast('🎉 Välkommen till Skrivpunkten!', 'success');
+        // Show identity code — user must save it before proceeding
+        const payload = { name: Identity.current.name, bio: Identity.current.bio, pubkey: Identity.current.pubkey, privkeyJwk: Identity.current.privkeyJwk, createdAt: Identity.current.createdAt };
+        document.getElementById('onboard-new-identity-code').value = btoa(JSON.stringify(payload));
+        document.getElementById('onboard-create-section').style.display = 'none';
+        document.getElementById('onboard-import-section').style.display = 'none';
+        document.getElementById('btn-onboard-show-create').style.display = 'none';
+        document.getElementById('onboard-save-code-section').style.display = 'block';
+        btn.disabled = false;
       }
     } catch (err) {
       UI.toast('Fel: ' + err.message, 'error');
@@ -2120,6 +2116,29 @@ async function init() {
     } catch (err) {
       UI.toast('Fel: ' + err.message, 'error');
     }
+  });
+
+  document.getElementById('btn-copy-new-identity-code')?.addEventListener('click', () => {
+    const code = document.getElementById('onboard-new-identity-code')?.value;
+    if (code) navigator.clipboard?.writeText(code)
+      .then(() => UI.toast('📋 Identitetskod kopierad — förvara den säkert!', 'success'))
+      .catch(() => UI.toast('Markera och kopiera koden manuellt', 'info'));
+  });
+
+  document.getElementById('btn-continue-to-app')?.addEventListener('click', async () => {
+    await Posts.create(
+      `Hej världen! 🌿 Det här är mitt första inlägg på Skrivpunkten — det decentraliserade nätverket som jag äger. Inga servrar. Inga mellanhänder. Bara ren kryptografi och skvaller.`
+    );
+    UI.updateHeaderCompose();
+    UI.showMainApp();
+    Gossip.init();
+    Network.init();
+    SW.register();
+    MqttSignaling.connect();
+    setInterval(() => UI.updateConnectionStatus(navigator.onLine || Peers.onlineCount() > 0), 3000);
+    UI.updateConnectionStatus(navigator.onLine);
+    UI.renderFeed();
+    UI.toast('🎉 Välkommen till Skrivpunkten!', 'success');
   });
 
   // Compose

@@ -793,6 +793,16 @@
             Skapa din identitet
           </button>
         </div>
+
+        <div id="onboard-save-code-section" style="display:none;margin-top:12px;">
+          <div style="background:rgba(252,200,100,0.08);border:1px solid rgba(252,200,100,0.35);border-radius:8px;padding:14px;margin-bottom:14px;">
+            <div style="font-family:var(--font-display);font-weight:700;font-size:14px;color:#fcc864;margin-bottom:6px;">⚠ Spara din identitetskod</div>
+            <div style="font-size:13px;line-height:1.6;color:var(--text-muted);">Din identitetskod är det enda sättet att logga in på en ny enhet eller återställa ditt konto. Kopiera och förvara den på ett säkert ställe — du ser den bara en gång.</div>
+          </div>
+          <textarea id="onboard-new-identity-code" readonly style="width:100%;height:90px;font-family:monospace;font-size:10px;resize:none;word-break:break-all;background:var(--bg-mid);border:1px solid var(--border);border-radius:8px;padding:10px;box-sizing:border-box;color:var(--text-primary);"></textarea>
+          <button class="btn btn-primary w-full mt-8" id="btn-copy-new-identity-code">📋 Kopiera identitetskoden</button>
+          <button class="btn btn-ghost w-full mt-8" id="btn-continue-to-app">Fortsätt till appen →</button>
+        </div>
       </div>
     </div>
   </div>
