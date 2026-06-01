@@ -2182,9 +2182,6 @@ async function init() {
     }
   });
 
-  document.getElementById('btn-broadcast-offline')?.addEventListener('click', () => {
-    UI.toast('📴 Offline-läge: Inlägg sparas lokalt och gossipas vid nästa synk', 'info');
-  });
 
   // Nav
   document.querySelectorAll('.nav-btn[data-screen]').forEach(btn => {
