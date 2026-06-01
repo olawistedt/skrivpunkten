@@ -1448,7 +1448,7 @@ const UI = {
             <div class="card text-muted text-center" style="font-size:13px;padding:32px;">
               Inga inlägg ännu.<br>
               <span style="font-size:11px;margin-top:8px;display:block;">
-                Skriv ditt första inlägg ovan, eller anslut till en peer för att se deras flöde.
+                Skriv ditt första inlägg ovan, eller anslut till en vän för att se dennes flöde.
               </span>
             </div>`;
           return;
@@ -1594,7 +1594,7 @@ const UI = {
     const post = posts.find(p => p.id === id);
     if (!post) return;
     Gossip.broadcast({ type: 'post', post });
-    UI.toast('📡 Inlägg skickades vidare till alla peers', 'success');
+    UI.toast('📡 Inlägg skickades vidare till alla vänner', 'success');
   },
 
   async deletePost(id) {
@@ -1610,7 +1610,7 @@ const UI = {
     Peers.getAll().then(peers => {
       if (peers.length === 0) {
         list.innerHTML = `<div class="card text-muted text-center" style="font-size:12px;">
-          Inga peers ännu — dela din QR-kod för att komma igång.
+          Inga vänner ännu — dela din QR-kod för att komma igång.
         </div>`;
         return;
       }
@@ -1726,7 +1726,7 @@ const UI = {
     const dot = document.getElementById('connection-dot');
     const label = document.getElementById('connection-label');
     if (dot) dot.className = `status-dot ${online ? 'online' : ''}`;
-    if (label) label.textContent = online ? `Online · ${Peers.onlineCount()} peers` : 'Offline';
+    if (label) label.textContent = online ? `Online · ${Peers.onlineCount()} vänner` : 'Offline';
   },
 
   async updateNotificationBadge() {
