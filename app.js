@@ -1418,7 +1418,7 @@ const UI = {
               <div class="avatar">${Identity.avatarHTML(p.authorPubkey)}</div>
               <div class="post-author">
                 <strong>${escHtml(p.authorName || 'Okänd')}</strong>
-                <span>${Identity.shortKey(p.authorPubkey)} · ${timeAgo(p.timestamp)}</span>
+                <span>${timeAgo(p.timestamp)}</span>
               </div>
               <div class="post-sig" title="Kryptografiskt signerat inlägg">🔏 verifierat</div>
             </div>
@@ -1661,7 +1661,6 @@ const UI = {
     if (!Identity.current) return;
     const av = document.getElementById('compose-avatar');
     const nm = document.getElementById('compose-name-display');
-    const pk = document.getElementById('compose-pubkey-short');
     if (av) {
       if (Identity.current.profileImage) {
         av.innerHTML = `<img src="${Identity.current.profileImage}" alt="">`;
@@ -1670,7 +1669,6 @@ const UI = {
       }
     }
     if (nm) nm.textContent = Identity.current.name;
-    if (pk) pk.textContent = Identity.shortKey(Identity.current.pubkey);
   }
 };
 
