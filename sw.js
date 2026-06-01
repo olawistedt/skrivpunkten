@@ -3,13 +3,13 @@
  * Offline-First caching + bakgrundssynkronisering
  */
 
-const CACHE_NAME = 'mycel-v1.0.1';
+const CACHE_NAME = 'mycel-v1.0.2';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
   '/app.js',
   '/manifest.json',
-  'https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap'
+  'https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;0,700;1,400&family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400;1,700&family=Space+Mono:wght@400;700&display=swap'
 ];
 
 // ── Install: förcacha alla statiska resurser ──

@@ -1318,6 +1318,7 @@ const UI = {
       b.classList.toggle('active', b.dataset.screen === name);
     });
     UI.currentScreen = name;
+    sessionStorage.setItem('activeScreen', name);
 
     if (name === 'feed') UI.renderFeed();
     if (name === 'peers') { UI.renderPeers(); UI.renderQR(); }
@@ -1327,7 +1328,8 @@ const UI = {
   showMainApp() {
     document.getElementById('screen-onboard').classList.remove('active');
     document.getElementById('bottom-nav').style.display = 'block';
-    UI.showScreen('feed');
+    const savedScreen = sessionStorage.getItem('activeScreen') || 'feed';
+    UI.showScreen(savedScreen);
     if (!UI._feedPollInterval) {
       UI._feedPollInterval = setInterval(() => {
         if (UI.currentScreen === 'feed') UI.renderFeed();
