@@ -237,7 +237,7 @@
     .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important; }
 
     /* ── Inputs ── */
-    input[type="text"], textarea {
+    input[type="text"], input[type="password"], textarea {
       width: 100%;
       background: var(--bg-mid);
       border: 1px solid var(--border);
@@ -787,9 +787,12 @@
 
     <div class="onboard-form card">
       <div id="onboard-import-section">
-        <label class="form-label">Din identitetskod</label>
-        <textarea id="onboard-import-code" placeholder="Klistra in kod här…" style="width:100%;height:80px;font-family:monospace;font-size:10px;resize:none;word-break:break-all;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:8px;box-sizing:border-box;color:var(--text);"></textarea>
-        <button class="btn btn-primary w-full mt-8" id="btn-onboard-do-import">Använd identitet</button>
+        <form id="form-login-identity" action="" method="post">
+          <input type="text" id="import-identity-username" name="username" autocomplete="username" tabindex="-1" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;overflow:hidden;">
+          <label class="form-label">Din identitetskod</label>
+          <input type="password" id="onboard-import-code" name="password" autocomplete="current-password" placeholder="Klistra in kod här…" style="font-family:monospace;font-size:10px;word-break:break-all;">
+          <button type="submit" class="btn btn-primary w-full mt-8" id="btn-onboard-do-import">Använd identitet</button>
+        </form>
       </div>
       <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:16px;">
         <button class="btn btn-primary w-full" id="btn-onboard-show-create">+ Skapa en ny identitet</button>
@@ -813,9 +816,13 @@
             <div style="font-family:var(--font-display);font-weight:700;font-size:14px;color:#fcc864;margin-bottom:6px;">⚠ Spara din identitetskod</div>
             <div style="font-size:13px;line-height:1.6;color:var(--text-muted);">Din identitetskod är det enda sättet att logga in på en ny enhet eller återställa ditt konto. Kopiera och förvara den på ett säkert ställe — du ser den bara en gång.</div>
           </div>
-          <textarea id="onboard-new-identity-code" readonly style="width:100%;height:90px;font-family:monospace;font-size:10px;resize:none;word-break:break-all;background:var(--bg-mid);border:1px solid var(--border);border-radius:8px;padding:10px;box-sizing:border-box;color:var(--text-primary);"></textarea>
-          <button class="btn btn-primary w-full mt-8" id="btn-copy-new-identity-code">📋 Kopiera identitetskoden</button>
-          <button class="btn btn-ghost w-full mt-8" id="btn-continue-to-app">Fortsätt till appen →</button>
+          <form id="form-save-identity" action="" method="post">
+            <input type="text" name="username" id="save-identity-username" autocomplete="username" tabindex="-1" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;overflow:hidden;">
+            <input type="password" name="password" id="save-identity-password" autocomplete="new-password" tabindex="-1" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;overflow:hidden;">
+            <textarea id="onboard-new-identity-code" readonly style="width:100%;height:90px;font-family:monospace;font-size:10px;resize:none;word-break:break-all;background:var(--bg-mid);border:1px solid var(--border);border-radius:8px;padding:10px;box-sizing:border-box;color:var(--text-primary);"></textarea>
+            <button type="button" class="btn btn-primary w-full mt-8" id="btn-copy-new-identity-code">📋 Kopiera identitetskoden</button>
+            <button type="submit" class="btn btn-ghost w-full mt-8">Fortsätt till appen →</button>
+          </form>
         </div>
       </div>
     </div>

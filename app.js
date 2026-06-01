@@ -2008,6 +2008,14 @@ function timeAgo(ts) {
 // ══════════════════════════════════════════════════════════
 // BOOTSTRAP — Huvudinitialisering
 // ══════════════════════════════════════════════════════════
+async function saveCredential(username, password) {
+  if (!window.PasswordCredential) return;
+  try {
+    const cred = new PasswordCredential({ id: username, password });
+    await navigator.credentials.store(cred);
+  } catch {}
+}
+
 async function init() {
   const loggedOut = sessionStorage.getItem('loggedOut');
   let currentDb = sessionStorage.getItem('currentDb');
@@ -2056,6 +2064,10 @@ async function init() {
       UI.updateHeaderCompose();
       UI.updateNotificationBadge();
       UI.showMainApp();
+      if (sessionStorage.getItem('showWelcome')) {
+        sessionStorage.removeItem('showWelcome');
+        setTimeout(() => UI.toast('🎉 Välkommen till Skrivpunkten!', 'success'), 400);
+      }
       Gossip.init();
       Network.init();
       SW.register();
@@ -2142,7 +2154,10 @@ async function init() {
 
         // Show identity code — user must save it before proceeding
         const payload = { name: Identity.current.name, bio: Identity.current.bio, pubkey: Identity.current.pubkey, privkeyJwk: Identity.current.privkeyJwk, createdAt: Identity.current.createdAt };
-        document.getElementById('onboard-new-identity-code').value = btoa(JSON.stringify(payload));
+        const code = btoa(JSON.stringify(payload));
+        document.getElementById('onboard-new-identity-code').value = code;
+        document.getElementById('save-identity-username').value = Identity.current.name;
+        document.getElementById('save-identity-password').value = code;
         document.getElementById('onboard-create-section').style.display = 'none';
         document.getElementById('onboard-import-section').style.display = 'none';
         document.getElementById('btn-onboard-show-create').style.display = 'none';
@@ -2164,7 +2179,15 @@ async function init() {
     if (!visible) document.getElementById('onboard-name')?.focus();
   });
 
-  document.getElementById('btn-onboard-do-import')?.addEventListener('click', async () => {
+  document.getElementById('onboard-import-code')?.addEventListener('input', (e) => {
+    try {
+      const data = JSON.parse(atob(e.target.value.trim()));
+      if (data.name) document.getElementById('import-identity-username').value = data.name;
+    } catch {}
+  });
+
+  document.getElementById('form-login-identity')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
     const raw = document.getElementById('onboard-import-code')?.value?.trim();
     if (!raw) { UI.toast('Klistra in en identitetskod först', 'error'); return; }
     try {
@@ -2219,6 +2242,7 @@ async function init() {
       sessionStorage.setItem('pendingImport', JSON.stringify(newId));
       sessionStorage.removeItem('loggedOut');
       sessionStorage.setItem('currentDb', dbName);
+      await saveCredential(data.name, raw);
       location.reload();
     } catch (err) {
       UI.toast('Fel: ' + err.message, 'error');
@@ -2232,20 +2256,16 @@ async function init() {
       .catch(() => UI.toast('Markera och kopiera koden manuellt', 'info'));
   });
 
-  document.getElementById('btn-continue-to-app')?.addEventListener('click', async () => {
+  document.getElementById('form-save-identity')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
     await Posts.create(
       `Hej världen! 🌿 Det här är mitt första inlägg på Skrivpunkten — det decentraliserade nätverket som jag äger. Inga servrar. Inga mellanhänder. Bara ren kryptografi och skvaller.`
     );
-    UI.updateHeaderCompose();
-    UI.showMainApp();
-    Gossip.init();
-    Network.init();
-    SW.register();
-    MqttSignaling.connect();
-    setInterval(() => UI.updateConnectionStatus(navigator.onLine || Peers.onlineCount() > 0), 3000);
-    UI.updateConnectionStatus(navigator.onLine);
-    UI.renderFeed();
-    UI.toast('🎉 Välkommen till Skrivpunkten!', 'success');
+    const username = document.getElementById('save-identity-username').value;
+    const password = document.getElementById('save-identity-password').value;
+    await saveCredential(username, password);
+    sessionStorage.setItem('showWelcome', '1');
+    location.reload();
   });
 
   // Compose
