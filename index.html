@@ -83,6 +83,8 @@
       padding: 20px 0 16px;
       margin-bottom: 24px;
     }
+    #screen-onboard.active ~ * header,
+    body:has(#screen-onboard.active) header { display: none; }
 
     .logo {
       font-family: var(--font-display);
