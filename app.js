@@ -2060,6 +2060,19 @@ async function saveCredential(username, password) {
 }
 
 async function init() {
+  // Kontrollera app-version och tvinga uppdatering om ny version finns
+  const savedVersion = localStorage.getItem('mycel-app-version');
+  if (savedVersion && savedVersion !== APP_VERSION) {
+    console.log(`[App] Ny version tillgänglig (${savedVersion} → ${APP_VERSION}) — uppdaterar…`);
+    localStorage.setItem('mycel-app-version', APP_VERSION);
+    // Tvinga en reload så att ny kod hämtas från nätverket
+    location.reload();
+    return;
+  }
+  if (!savedVersion) {
+    localStorage.setItem('mycel-app-version', APP_VERSION);
+  }
+
   const loggedOut = sessionStorage.getItem('loggedOut');
   let currentDb = sessionStorage.getItem('currentDb');
 
@@ -2513,6 +2526,9 @@ async function init() {
     UI.toast(Gossip.active ? '📡 Gossip-protokoll aktiverat' : '🔇 Gossip pausat', 'info');
   });
 }
+
+// App version för cache-invalidering
+const APP_VERSION = '1.0.5';
 
 // Start
 // Tema-toggle (samma mönster som ../blogg)
