@@ -993,7 +993,7 @@ const ManualSignaling = {
     try { data = JSON.parse(atob(clean)); } catch { throw new Error('Ogiltig kod — se till att kopiera hela koden utan radbrytningar.'); }
     if (data.t === 'o') {
       const answerCode = await ManualSignaling.acceptOffer(encoded);
-      return { action: 'answered', code: answerCode };
+      return { action: 'answered', code: answerCode, toPk: data.pk, toDid: data.did };
     }
     if (data.t === 'a') {
       await ManualSignaling.acceptAnswer(encoded);
@@ -2405,12 +2405,27 @@ async function init() {
     try {
       const result = await ManualSignaling.handlePastedCode(code);
       if (result.action === 'answered') {
+        // Försök leverera svaret automatiskt via MQTT
+        const mqttTarget = result.toDid
+          ? `mycel/inbox/${result.toPk}/${result.toDid}`
+          : `mycel/inbox/${result.toPk}`;
+        const autoSent = MqttSignaling.client?.connected
+          ? (MqttSignaling.client.publish(mqttTarget, JSON.stringify({
+              type: 'answer',
+              from: Identity.current.pubkey,
+              did: Identity.current.deviceId,
+              code: result.code
+            })), true)
+          : false;
         const box = document.getElementById('answer-output-box');
         const pre = document.getElementById('answer-output-code');
         if (pre) pre.textContent = result.code;
         if (box) box.style.display = 'block';
         input.value = '';
-        UI.toast('✔ Svarskod skapad — skicka tillbaka till din vän!', 'success');
+        UI.toast(autoSent
+          ? '✔ Svar skickat automatiskt till din vän!'
+          : '✔ Svarskod skapad — skicka tillbaka till din vän!',
+          'success');
       } else if (result.action === 'connected') {
         input.value = '';
         document.getElementById('answer-output-box').style.display = 'none';
