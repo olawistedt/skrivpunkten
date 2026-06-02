@@ -1477,7 +1477,7 @@ const UI = {
               <div class="comment-body">
                 <div class="comment-meta"><strong>${escHtml(c.authorName || 'Okänd')}</strong>${timeAgo(c.timestamp)}</div>
                 <div class="comment-text">${escHtml(c.text)}</div>
-                <button class="post-action-btn${cLikeClass}" onclick="UI.likeComment('${c.id}')" title="${cLikeTitle}" style="font-size:10px;padding:1px 4px">${cLikeLabel}</button>
+                <button class="post-action-btn${cLikeClass}" onclick="UI.likeComment('${c.id}')" title="${cLikeTitle}" style="font-size:15px;padding:1px 4px">${cLikeLabel}</button>
               </div>
             </div>`;
           }).join('');
@@ -1494,9 +1494,8 @@ const UI = {
             </div>
             <div class="post-content">${escHtml(p.text)}</div>
             <div class="post-footer">
-              <button class="post-action-btn${likeClass}" onclick="UI.likePost('${p.id}')" title="${likeNames}">${likeLabel}</button>
-              <button class="post-action-btn" onclick="UI.toggleComments('${p.id}')">💬${comments.length > 0 ? ` ${comments.length}` : ''}</button>
-              <button class="post-action-btn" onclick="UI.gossipPost('${p.id}')">📡 gossip</button>
+              <button class="post-action-btn${likeClass}" onclick="UI.likePost('${p.id}')" title="${likeNames}" style="font-size:15px">${likeLabel}</button>
+              <button class="post-action-btn" onclick="UI.toggleComments('${p.id}')" style="font-size:15px">💬${comments.length > 0 ? ` ${comments.length}` : ''}</button>
               ${p.local ? `<button class="post-action-btn" onclick="UI.deletePost('${p.id}')">🗑 radera</button>` : ''}
               <span class="hops">${p.hops > 0 ? `${p.hops} hopp` : 'lokalt'}</span>
             </div>
@@ -1587,14 +1586,6 @@ const UI = {
         if (el) el.hidden = false;
       }, 0);
     }
-  },
-
-  async gossipPost(id) {
-    const posts = await Posts.getAll();
-    const post = posts.find(p => p.id === id);
-    if (!post) return;
-    Gossip.broadcast({ type: 'post', post });
-    UI.toast('📡 Inlägg skickades vidare till alla vänner', 'success');
   },
 
   async deletePost(id) {
