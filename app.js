@@ -336,6 +336,11 @@ const Posts = {
     const seen = await DB.get('seen', post.id);
     if (seen) return false;
 
+    // Acceptera bara inlägg från direkta vänner
+    const peers = await Peers.getAll();
+    const isKnownAuthor = peers.some(p => p.pubkey === post.authorPubkey);
+    if (!isKnownAuthor) return false;
+
     // Verifiera signatur
     const payload = JSON.stringify({
       id: post.id, text: post.text,
@@ -1029,7 +1034,9 @@ const Gossip = {
         break;
 
       case 'sync_request': {
-        const posts = await Posts.getAll();
+        // Skicka bara egna inlägg — aldrig vidarebefordra andras inlägg
+        const allPosts = await Posts.getAll();
+        const posts = allPosts.filter(p => p.authorPubkey === Identity.current?.pubkey);
         const likes = await Likes.getAll();
         const comments = await Comments.getAll();
         const commentLikes = await CommentLikes.getAll();
@@ -1636,7 +1643,7 @@ const UI = {
     Peers.getAll().then(peers => {
       if (peers.length === 0) {
         list.innerHTML = `<div class="card text-muted text-center" style="font-size:12px;">
-          Inga vänner ännu — dela din QR-kod för att komma igång.
+          Inga vänner ännu — skicka en inbjudningskod för att komma igång.
         </div>`;
         return;
       }
@@ -1898,11 +1905,16 @@ const MqttSignaling = {
       if (msg.type === 'beacon') {
         // Redan ansluten? Ignorera.
         if (Peers.connFor(msg.from)?.channel?.readyState === 'open') return;
+        // Svara bara på kända peers (eller egna enheter) — förhindrar oönskad återanslutning
+        const isSameIdentity = msg.from === myPk;
+        if (!isSameIdentity) {
+          const knownPeers = await Peers.getAll();
+          if (!knownPeers.some(p => p.pubkey === msg.from)) return;
+        }
         // Svara med egen beacon så att nystartad peer vet att vi är online
         const replyTarget = msg.did ? `mycel/inbox/${msg.from}/${msg.did}` : `mycel/inbox/${msg.from}`;
         client.publish(replyTarget, JSON.stringify({ type: 'beacon-ack', from: myPk, did: myDid }));
         // Initiator (lägre composite) skapar offer
-        const isSameIdentity = msg.from === myPk;
         if ((myPk + ':' + myDid) < (msg.from + ':' + (msg.did || ''))) {
           await MqttSignaling._sendOfferTo(msg.from, msg.did, isSameIdentity);
         }
@@ -1911,6 +1923,10 @@ const MqttSignaling = {
         // Svar på vår uppstarts-beacon — initiator skapar offer
         if (Peers.connFor(msg.from)?.channel?.readyState === 'open') return;
         const isSameIdentity = msg.from === myPk;
+        if (!isSameIdentity) {
+          const knownPeers = await Peers.getAll();
+          if (!knownPeers.some(p => p.pubkey === msg.from)) return;
+        }
         if ((myPk + ':' + myDid) < (msg.from + ':' + (msg.did || ''))) {
           await MqttSignaling._sendOfferTo(msg.from, msg.did, isSameIdentity);
         }
@@ -1918,6 +1934,12 @@ const MqttSignaling = {
       } else if (msg.type === 'offer') {
         // Jag är responder — hoppa över om vi redan har en öppen kanal till denna peer
         if (Peers.connFor(msg.from)?.channel?.readyState === 'open') return;
+        // Acceptera bara offer från kända peers (eller egna enheter)
+        const isSameIdentityOffer = msg.from === myPk;
+        if (!isSameIdentityOffer) {
+          const knownPeers = await Peers.getAll();
+          if (!knownPeers.some(p => p.pubkey === msg.from)) return;
+        }
         try {
           const answerCode = await ManualSignaling.acceptOffer(msg.code);
           // Svara riktat till avsändarens specifika enhet
@@ -2078,7 +2100,9 @@ async function init() {
 
   // ── Migration: if no accounts registry yet, check the old single DB ──
   const accounts = JSON.parse(localStorage.getItem('mycel-accounts') || '[]');
-  if (accounts.length === 0 && !loggedOut && !currentDb) {
+  const skipMigration = localStorage.getItem('mycel-skip-migration');
+  localStorage.removeItem('mycel-skip-migration');
+  if (accounts.length === 0 && !loggedOut && !currentDb && !skipMigration) {
     DB.DB_NAME = 'mycel-v1';
     await DB.open();
     const oldId = await DB.get('identity', 'self');
@@ -2512,20 +2536,29 @@ async function init() {
     // Remove user-specific localStorage data
     localStorage.removeItem('mycel-contacts');
     localStorage.removeItem('mycel-recovery-shards');
+    localStorage.setItem('mycel-skip-migration', '1');
     // Remove stale signaling keys
     for (let i = localStorage.length - 1; i >= 0; i--) {
       const k = localStorage.key(i);
       if (k && k.startsWith('mycel-sig-')) localStorage.removeItem(k);
     }
-    // Close and delete the IndexedDB database entirely
+    // Töm alla stores via öppen anslutning (garanterat — fungerar även om SW blockerar deleteDatabase)
+    await DB.clear('identity');
+    await DB.clear('posts');
+    await DB.clear('peers');
+    await DB.clear('seen');
+    await DB.clear('likes');
+    await DB.clear('comments');
+    await DB.clear('comment_likes');
+    // Stäng anslutningen och försök radera hela databasen
     if (DB.db) { DB.db.close(); DB.db = null; }
     if (currentDb) {
-      await new Promise(resolve => {
-        const req = indexedDB.deleteDatabase(currentDb);
-        req.onsuccess = () => resolve();
-        req.onerror = () => resolve();
-        req.onblocked = () => resolve();
-      });
+      indexedDB.deleteDatabase(currentDb); // bästa försök — blockeras ibland av SW
+    }
+    // Avregistrera SW så den inte håller gamla DB-anslutningar vid nästa laddning
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r => r.unregister()));
     }
     sessionStorage.clear();
     location.reload();
