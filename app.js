@@ -2490,19 +2490,29 @@ async function init() {
 
   document.getElementById('btn-reset-identity')?.addEventListener('click', async () => {
     if (!confirm('⚠ Detta raderar din identitet och ALL data. Kan inte ångras. Fortsätta?')) return;
-    // Remove this user from the accounts registry
     const currentDb = sessionStorage.getItem('currentDb');
+    // Remove this user from the accounts registry
     const accounts = JSON.parse(localStorage.getItem('mycel-accounts') || '[]');
     localStorage.setItem('mycel-accounts', JSON.stringify(accounts.filter(a => a.dbName !== currentDb)));
-    await DB.clear('identity');
-    await DB.clear('posts');
-    await DB.clear('peers');
-    await DB.clear('seen');
-    await DB.clear('likes');
-    await DB.clear('comments');
-    await DB.clear('comment_likes');
-    sessionStorage.removeItem('loggedOut');
-    sessionStorage.removeItem('currentDb');
+    // Remove user-specific localStorage data
+    localStorage.removeItem('mycel-contacts');
+    localStorage.removeItem('mycel-recovery-shards');
+    // Remove stale signaling keys
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith('mycel-sig-')) localStorage.removeItem(k);
+    }
+    // Close and delete the IndexedDB database entirely
+    if (DB.db) { DB.db.close(); DB.db = null; }
+    if (currentDb) {
+      await new Promise(resolve => {
+        const req = indexedDB.deleteDatabase(currentDb);
+        req.onsuccess = () => resolve();
+        req.onerror = () => resolve();
+        req.onblocked = () => resolve();
+      });
+    }
+    sessionStorage.clear();
     location.reload();
   });
 
