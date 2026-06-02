@@ -3,7 +3,7 @@
  * Offline-First caching + bakgrundssynkronisering
  */
 
-const CACHE_NAME = 'mycel-v1.0.2';
+const CACHE_NAME = 'mycel-v1.0.4';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -55,6 +55,27 @@ self.addEventListener('fetch', event => {
 
   // Ignorera WebRTC, BroadcastChannel och andra browser-APIs
   if (url.protocol === 'chrome-extension:') return;
+
+  // Network-first för core-appfiler (HTML/JS) så kodändringar slår igenom direkt.
+  // Faller tillbaka på cache om offline.
+  const isCore = request.mode === 'navigate'
+    || url.pathname.endsWith('/app.js')
+    || url.pathname.endsWith('/index.html')
+    || url.pathname === '/';
+  if (isCore) {
+    event.respondWith(
+      fetch(request)
+        .then(response => {
+          if (response.ok) {
+            const toCache = response.clone();
+            caches.open(CACHE_NAME).then(cache => cache.put(request, toCache)).catch(() => {});
+          }
+          return response;
+        })
+        .catch(() => caches.match(request).then(c => c || caches.match('/index.html')))
+    );
+    return;
+  }
 
   event.respondWith(
     caches.match(request)

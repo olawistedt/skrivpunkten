@@ -758,6 +758,21 @@ const ManualSignaling = {
         UI.updateStats();
         UI.toast(`✓ Direkt P2P-koppling öppen med ${peerRef.name || pubkey.slice(0, 8)}`, 'success');
         setTimeout(() => Gossip.syncWithPeer(pubkey), 300);
+        // Stäng MQTT när inga kända peers är frånkopplade — signalering behövs inte längre.
+        // (Vi har minst en öppen kanal här; om alla kända peers är anslutna, eller om vi
+        //  inte har några kända peers alls, behövs MQTT inte mer.)
+        Peers.getAll().then(allPeers => {
+          const anyPending = allPeers.some(p => Peers.connFor(p.pubkey)?.channel?.readyState !== 'open');
+          if (!anyPending) {
+            clearInterval(MqttSignaling._beaconTimer);
+            MqttSignaling._beaconTimer = null;
+            if (MqttSignaling.client?.connected) {
+              MqttSignaling.client.end(true);
+              MqttSignaling.client = null;
+              console.log('[MQTT] Anslutning etablerad via P2P — kopplar ned MQTT');
+            }
+          }
+        });
       };
 
       if (ch.readyState === 'open') {
@@ -773,6 +788,11 @@ const ManualSignaling = {
         if (entry) entry.channel = null;
         UI.renderPeers();
         UI.updateConnectionStatus(Peers.onlineCount() > 0);
+        // Återanslut MQTT för att kunna omförhandla WebRTC
+        if (!MqttSignaling.client?.connected) {
+          MqttSignaling.client = null;
+          setTimeout(() => MqttSignaling.connect(), 1000);
+        }
         // Initiator skapar nytt offer när kanalen stängs
         if (isInitiator && pubkey) {
           setTimeout(async () => {
@@ -811,19 +831,34 @@ const ManualSignaling = {
       pc.ondatachannel = (e) => setupChannel(e.channel);
     }
 
-    // Rensa kanal vid frånkoppling — reagera på 'disconnected' direkt (snabbt, ~5 s)
-    // så att _sendBeacons slutar hoppa över peern och återanslutning kan starta.
+    // Rensa kanal vid frånkoppling. OBS: 'disconnected' är ofta övergående och
+    // återhämtar sig av sig själv — ge ICE en frist innan vi river ned. Endast
+    // 'failed'/'closed' är slutgiltiga och river ned direkt.
+    let _disconnectTimer = null;
     const _clearChannel = () => {
       const finalKey = Peers.connKey(peerRef.pubkey, peerRef.deviceId);
       const entry = Peers.connections.get(finalKey);
       if (entry?.channel) { entry.channel = null; UI.renderPeers(); }
     };
-    pc.onconnectionstatechange = () => {
-      if (['disconnected', 'failed', 'closed'].includes(pc.connectionState)) _clearChannel();
+    const _onState = (state) => {
+      if (state === 'connected' || state === 'completed') {
+        // Återhämtad — avbryt ev. nedräkning
+        if (_disconnectTimer) { clearTimeout(_disconnectTimer); _disconnectTimer = null; }
+      } else if (state === 'failed' || state === 'closed') {
+        if (_disconnectTimer) { clearTimeout(_disconnectTimer); _disconnectTimer = null; }
+        _clearChannel();
+      } else if (state === 'disconnected') {
+        // Vänta och se om ICE återhämtar sig innan vi river ned
+        if (!_disconnectTimer) {
+          _disconnectTimer = setTimeout(() => {
+            _disconnectTimer = null;
+            if (['disconnected', 'failed', 'closed'].includes(pc.iceConnectionState)) _clearChannel();
+          }, 8000);
+        }
+      }
     };
-    pc.oniceconnectionstatechange = () => {
-      if (['disconnected', 'failed', 'closed'].includes(pc.iceConnectionState)) _clearChannel();
-    };
+    pc.onconnectionstatechange = () => _onState(pc.connectionState);
+    pc.oniceconnectionstatechange = () => _onState(pc.iceConnectionState);
 
     return pc;
   },
@@ -1794,17 +1829,16 @@ const SW = {
 // ══════════════════════════════════════════════════════════
 // 11. MQTT-SIGNALING (automatisk återanslutning, cross-browser, ingen server)
 // ══════════════════════════════════════════════════════════
-// Enkel och robust: varje klient prenumererar på sin egen inbox-topic
-// och skickar periodiska "beacon"-meddelanden till kända peers.
-// Ingen beroende på retained messages (opålitligt på publika brokers).
+// MQTT används bara som uppstarts-signalering för att etablera WebRTC.
+// När alla kända peers är anslutna via WebRTC kopplas MQTT ned helt.
 //
 // Flöde:
-//   1. Varje klient prenumererar på  mycel/inbox/{myPubkey}
-//   2. Var 10:e sekund: skicka beacon till alla kända, ej anslutna peers
-//   3. När initiator (lägre pubkey) tar emot beacon → skapar och skickar offer
-//   4. Responder tar emot offer → skapar och skickar answer
-//   5. Initiator tar emot answer → WebRTC-kanal öppnas
-//   Beacons slutar skickas till en peer när kanalen är öppen.
+//   1. Klient startar → prenumererar på mycel/inbox/{myPubkey}
+//   2. Uppstartsskur: annonsera oss med beacon (3 gånger), sedan bara lyssna
+//   3. Mottagen beacon → svara med beacon-ack så nystartad peer vet att vi finns
+//   4. Initiator (lägre composite) → skapar och skickar offer
+//   5. Responder → skapar och skickar answer → WebRTC-kanal öppnas
+//   6. Alla peers anslutna → MQTT kopplas ned. Vid kanalstängning återansluts MQTT.
 const MqttSignaling = {
   client: null,
   BROKER: 'wss://broker.emqx.io:8084/mqtt',
@@ -1817,7 +1851,7 @@ const MqttSignaling = {
       console.warn('[MQTT] mqtt.js ej laddat — automatisk signalering inaktiv');
       return;
     }
-    if (MqttSignaling.client?.connected) return;
+    if (MqttSignaling.client) return; // redan ansluten eller håller på att ansluta
 
     const myPk = Identity.current.pubkey;
     const clientId = `mycel-${myPk.slice(0, 16)}-${Date.now()}`;
@@ -1839,10 +1873,16 @@ const MqttSignaling = {
       client.subscribe([`mycel/inbox/${myPk}`, `mycel/inbox/${myPk}/${myDid}`], (err) => {
         if (err) { console.warn('[MQTT] Prenumerationsfel:', err.message); return; }
         console.log('[MQTT] Lyssnar på mycel/inbox/' + myPk.slice(0, 12) + '…');
+        // Uppstartsskur: annonsera oss några gånger för att nå redan online-peers,
+        // sedan bara lyssna. Nystartade peers annonserar själva och når oss då.
         MqttSignaling._sendBeacons();
+        let burst = 0;
+        clearInterval(MqttSignaling._beaconTimer);
+        MqttSignaling._beaconTimer = setInterval(() => {
+          if (++burst >= 3) { clearInterval(MqttSignaling._beaconTimer); MqttSignaling._beaconTimer = null; return; }
+          MqttSignaling._sendBeacons();
+        }, 5000);
       });
-      clearInterval(MqttSignaling._beaconTimer);
-      MqttSignaling._beaconTimer = setInterval(() => MqttSignaling._sendBeacons(), 3000);
     });
 
     client.on('message', async (_topic, payload) => {
@@ -1856,16 +1896,28 @@ const MqttSignaling = {
       console.log('[MQTT] ← %s från %s', msg.type, msg.from.slice(0, 12));
 
       if (msg.type === 'beacon') {
-        // Kontrollera om det är en annan enhet med samma identitet
+        // Redan ansluten? Ignorera.
+        if (Peers.connFor(msg.from)?.channel?.readyState === 'open') return;
+        // Svara med egen beacon så att nystartad peer vet att vi är online
+        const replyTarget = msg.did ? `mycel/inbox/${msg.from}/${msg.did}` : `mycel/inbox/${msg.from}`;
+        client.publish(replyTarget, JSON.stringify({ type: 'beacon-ack', from: myPk, did: myDid }));
+        // Initiator (lägre composite) skapar offer
         const isSameIdentity = msg.from === myPk;
-        const myComposite = myPk + ':' + myDid;
-        const peerComposite = msg.from + ':' + (msg.did || '');
-        if (myComposite < peerComposite) {
+        if ((myPk + ':' + myDid) < (msg.from + ':' + (msg.did || ''))) {
+          await MqttSignaling._sendOfferTo(msg.from, msg.did, isSameIdentity);
+        }
+
+      } else if (msg.type === 'beacon-ack') {
+        // Svar på vår uppstarts-beacon — initiator skapar offer
+        if (Peers.connFor(msg.from)?.channel?.readyState === 'open') return;
+        const isSameIdentity = msg.from === myPk;
+        if ((myPk + ':' + myDid) < (msg.from + ':' + (msg.did || ''))) {
           await MqttSignaling._sendOfferTo(msg.from, msg.did, isSameIdentity);
         }
 
       } else if (msg.type === 'offer') {
-        // Jag är responder — acceptera alltid offer (peer kan ha startat om).
+        // Jag är responder — hoppa över om vi redan har en öppen kanal till denna peer
+        if (Peers.connFor(msg.from)?.channel?.readyState === 'open') return;
         try {
           const answerCode = await ManualSignaling.acceptOffer(msg.code);
           // Svara riktat till avsändarens specifika enhet
@@ -1917,9 +1969,9 @@ const MqttSignaling = {
 
     const peers = await Peers.getAll();
     for (const peer of peers) {
-      if (Peers.connFor(peer.pubkey)?.channel?.readyState === 'open') continue;
+      const ch = Peers.connFor(peer.pubkey)?.channel;
+      if (ch?.readyState === 'open' || ch?.readyState === 'connecting') continue;
       MqttSignaling.client.publish(`mycel/inbox/${peer.pubkey}`, beaconPayload);
-      // Proaktivt offer (halverar fördröjning) — skickas till broadcast-ämne
       if ((myPk + ':' + myDid) < (peer.pubkey + ':')) {
         MqttSignaling._sendOfferTo(peer.pubkey, null, false);
       }
@@ -1942,10 +1994,10 @@ const MqttSignaling = {
     // För olika identiteter: hoppa över om vi har någon öppen kanal till dem
     if (!allowSameIdentity && Peers.connFor(peerPk)?.channel?.readyState === 'open') return;
 
-    // Undvik offer-spam: max en gång per 10 s per enhet
-    const throttleKey = peerPk + ':' + (peerDid || '');
+    // Undvik offer-spam: max en gång per 30 s per peer (normaliserad nyckel utan deviceId)
+    const throttleKey = peerPk;
     const last = MqttSignaling._lastOfferTo.get(throttleKey) || 0;
-    if (Date.now() - last < 10000) return;
+    if (Date.now() - last < 30000) return;
     MqttSignaling._lastOfferTo.set(throttleKey, Date.now());
 
     try {
