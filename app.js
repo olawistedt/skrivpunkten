@@ -2338,9 +2338,6 @@ async function init() {
 
   document.getElementById('form-save-identity')?.addEventListener('submit', async (e) => {
     e.preventDefault();
-    await Posts.create(
-      `Hej världen! 🌿 Det här är mitt första inlägg på Skrivpunkten — det decentraliserade nätverket som jag äger. Inga servrar. Inga mellanhänder. Bara ren kryptografi och skvaller.`
-    );
     const username = document.getElementById('save-identity-username').value;
     const password = document.getElementById('save-identity-password').value;
     await saveCredential(username, password);
