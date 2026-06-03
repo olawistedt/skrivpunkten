@@ -932,17 +932,6 @@
     </div>
 
     <div class="card mt-12">
-      <div class="section-title">Social återställning</div>
-      <p class="text-muted" style="font-size:12px;margin-bottom:12px;">
-        Dela krypterade fragment av din återställningsnyckel med betrodda vänner. Du behöver minst 2 av 3 fragment för att återskapa din identitet.
-      </p>
-      <div id="recovery-shards-list"></div>
-      <button class="btn btn-ghost btn-sm w-full mt-8" id="btn-setup-recovery">
-        🛡 Konfigurera Social Återställning
-      </button>
-    </div>
-
-    <div class="card mt-12">
       <div class="section-title">Data & Statistik</div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;text-align:center;">
         <div>
@@ -959,9 +948,22 @@
         </div>
       </div>
     </div>
-
+    
     <div class="card mt-12">
       <div class="section-title">Inställningar</div>
+      <button class="btn btn-ghost btn-sm w-full" id="btn-toggle-recovery" style="justify-content:space-between;">
+        <span>Social återställning</span>
+        <span id="recovery-toggle-icon">▸</span>
+      </button>
+      <div id="recovery-section" style="display:none;margin-top:12px;">
+        <p class="text-muted" style="font-size:12px;margin-bottom:12px;">
+          Dela krypterade fragment av din återställningsnyckel med betrodda vänner. Du behöver minst 2 av 3 fragment för att återskapa din identitet.
+        </p>
+        <div id="recovery-shards-list"></div>
+        <button class="btn btn-ghost btn-sm w-full mt-8" id="btn-setup-recovery">
+          🛡 Konfigurera Social Återställning
+        </button>
+      </div>
       <hr />
       <button class="btn btn-danger btn-sm w-full" id="btn-reset-identity">
         ⚠ Radera identitet & data

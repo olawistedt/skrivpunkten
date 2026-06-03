@@ -2497,6 +2497,14 @@ async function init() {
     UI.toast('✓ Profil uppdaterad', 'success');
   });
 
+  document.getElementById('btn-toggle-recovery')?.addEventListener('click', () => {
+    const section = document.getElementById('recovery-section');
+    const icon = document.getElementById('recovery-toggle-icon');
+    const open = section.style.display === 'none';
+    section.style.display = open ? 'block' : 'none';
+    icon.textContent = open ? '▾' : '▸';
+  });
+
   document.getElementById('btn-setup-recovery')?.addEventListener('click', async () => {
     UI.toast('🛡 Genererar 3 återställningsfragment...', 'info');
     const shards = await Identity.createRecoveryShards(3);
