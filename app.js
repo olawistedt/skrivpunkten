@@ -1815,12 +1815,8 @@ const SW = {
     if ('serviceWorker' in navigator) {
       try {
         const reg = await navigator.serviceWorker.register('sw.js');
-        const el = document.getElementById('sw-status');
-        if (el) el.textContent = reg.active ? 'Aktiv ✓' : 'Registrerad';
         return true;
       } catch (err) {
-        const el = document.getElementById('sw-status');
-        if (el) el.textContent = 'Ej tillgänglig';
         return false;
       }
     }
@@ -2570,11 +2566,6 @@ async function init() {
     document.getElementById('install-banner')?.classList.remove('show');
   });
 
-  document.getElementById('btn-toggle-gossip')?.addEventListener('click', (e) => {
-    Gossip.active = !Gossip.active;
-    e.target.textContent = Gossip.active ? 'Aktivt ✓' : 'Inaktivt';
-    UI.toast(Gossip.active ? '📡 Gossip-protokoll aktiverat' : '🔇 Gossip pausat', 'info');
-  });
 }
 
 // App version för cache-invalidering
