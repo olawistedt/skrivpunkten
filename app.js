@@ -236,6 +236,7 @@ const Identity = {
       await DB.put('identity', id);
     }
     Identity.current = id;
+    console.log('[Identity] Publik nyckel:', id.pubkey);
     try {
       Identity.privateKey = await Crypto.importPrivateKey(id.privkeyJwk);
     } catch {
@@ -763,21 +764,7 @@ const ManualSignaling = {
         UI.updateStats();
         UI.toast(`✓ Direkt P2P-koppling öppen med ${peerRef.name || pubkey.slice(0, 8)}`, 'success');
         setTimeout(() => Gossip.syncWithPeer(pubkey), 300);
-        // Stäng MQTT när inga kända peers är frånkopplade — signalering behövs inte längre.
-        // (Vi har minst en öppen kanal här; om alla kända peers är anslutna, eller om vi
-        //  inte har några kända peers alls, behövs MQTT inte mer.)
-        Peers.getAll().then(allPeers => {
-          const anyPending = allPeers.some(p => Peers.connFor(p.pubkey)?.channel?.readyState !== 'open');
-          if (!anyPending) {
-            clearInterval(MqttSignaling._beaconTimer);
-            MqttSignaling._beaconTimer = null;
-            if (MqttSignaling.client?.connected) {
-              MqttSignaling.client.end(true);
-              MqttSignaling.client = null;
-              console.log('[MQTT] Anslutning etablerad via P2P — kopplar ned MQTT');
-            }
-          }
-        });
+        // Håll MQTT aktivt som bakgrundssäkring för snabb återanslutning om en peer laddar om.
       };
 
       if (ch.readyState === 'open') {
@@ -793,10 +780,10 @@ const ManualSignaling = {
         if (entry) entry.channel = null;
         UI.renderPeers();
         UI.updateConnectionStatus(Peers.onlineCount() > 0);
-        // Återanslut MQTT för att kunna omförhandla WebRTC
+        // Säkerställ att MQTT är aktivt för att kunna omförhandla WebRTC
         if (!MqttSignaling.client?.connected) {
           MqttSignaling.client = null;
-          setTimeout(() => MqttSignaling.connect(), 1000);
+          MqttSignaling.connect();
         }
         // Initiator skapar nytt offer när kanalen stängs
         if (isInitiator && pubkey) {
@@ -1132,6 +1119,15 @@ const Gossip = {
           }
           UI.renderFeed();
           UI.renderPeers();
+        }
+        break;
+
+      case 'closing':
+        // Avsändaren håller på att ladda om/stänga — återanslut MQTT omedelbart
+        // så att vi inte behöver vänta på ICE-timeout (~30 s) för att märka frånvaron.
+        if (!MqttSignaling.client?.connected) {
+          MqttSignaling.client = null;
+          setTimeout(() => MqttSignaling.connect(), 500);
         }
         break;
     }
@@ -1723,7 +1719,6 @@ const UI = {
     }
     document.getElementById('id-name').textContent = id.name;
     document.getElementById('id-bio').textContent = id.bio || 'Ingen biografi';
-    document.getElementById('id-pubkey-full').textContent = id.pubkey;
 
     // Recovery shards UI
     const shardList = document.getElementById('recovery-shards-list');
@@ -1903,8 +1898,8 @@ const MqttSignaling = {
       console.log('[MQTT] ← %s från %s', msg.type, msg.from.slice(0, 12));
 
       if (msg.type === 'beacon') {
-        // Redan ansluten? Ignorera.
-        if (Peers.connFor(msg.from)?.channel?.readyState === 'open') return;
+        // Ignorera bara om exakt denna enhet (pubkey:deviceId) redan är ansluten
+        if (Peers.connections.get(Peers.connKey(msg.from, msg.did))?.channel?.readyState === 'open') return;
         // Svara bara på kända peers (eller egna enheter) — förhindrar oönskad återanslutning
         const isSameIdentity = msg.from === myPk;
         if (!isSameIdentity) {
@@ -1921,7 +1916,7 @@ const MqttSignaling = {
 
       } else if (msg.type === 'beacon-ack') {
         // Svar på vår uppstarts-beacon — initiator skapar offer
-        if (Peers.connFor(msg.from)?.channel?.readyState === 'open') return;
+        if (Peers.connections.get(Peers.connKey(msg.from, msg.did))?.channel?.readyState === 'open') return;
         const isSameIdentity = msg.from === myPk;
         if (!isSameIdentity) {
           const knownPeers = await Peers.getAll();
@@ -1932,8 +1927,8 @@ const MqttSignaling = {
         }
 
       } else if (msg.type === 'offer') {
-        // Jag är responder — hoppa över om vi redan har en öppen kanal till denna peer
-        if (Peers.connFor(msg.from)?.channel?.readyState === 'open') return;
+        // Ignorera bara om exakt denna enhet (pubkey:deviceId) redan är ansluten
+        if (Peers.connections.get(Peers.connKey(msg.from, msg.did))?.channel?.readyState === 'open') return;
         // Acceptera bara offer från kända peers (eller egna enheter)
         const isSameIdentityOffer = msg.from === myPk;
         if (!isSameIdentityOffer) {
@@ -2607,3 +2602,12 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 document.addEventListener('DOMContentLoaded', init);
+
+window.addEventListener('beforeunload', () => {
+  const closing = JSON.stringify({ type: 'closing', from: Identity.current?.pubkey });
+  for (const [, conn] of Peers.connections) {
+    if (conn.channel?.readyState === 'open') {
+      try { conn.channel.send(closing); } catch { }
+    }
+  }
+});
